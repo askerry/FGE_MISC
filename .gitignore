@@ -1,0 +1,37 @@
+# Packages #
+############
+# it's better to unpack these files and commit the raw source
+# git has its own built in compression methods
+*.7z
+*.dmg
+*.gz
+*.iso
+*.jar
+*.rar
+*.tar
+*.zip
+*.zip*
+ 
+# Logs, databases, other data #
+######################
+*.log
+*.sql
+*.sqlite
+*.sqlite3
+*.csv
+*.tsv
+*.shx
+*.shp.xml
+*.shp
+*.sbx
+*.sbn
+*.prj
+*.dbf
+ 
+# OS generated files #
+######################
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
