@@ -12,7 +12,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pickle
 import warnings
+import datetime
 from itertools import cycle
+import scipy.stats
 from sklearn.decomposition import PCA, FastICA
 from matplotlib.patches import FancyArrowPatch
 from mpl_toolkits.mplot3d import proj3d   
@@ -25,9 +27,6 @@ def quicksave(obj,filename):
     with open(filename, 'wb') as output:
         pickler = pickle.Pickler(output, pickle.HIGHEST_PROTOCOL)
         pickler.dump(obj)
-   
-def reversehash(dictobj):
-    return {item[1]:item[0] for item in dictobj.items()}
     
 def plotbar(array, xlabel='', ylabel='', title='', xticklabels=None, ax=None, figsize=[4,3], ylim=None):
     if not ax:
@@ -84,6 +83,9 @@ class Arrow3D(FancyArrowPatch):
             xs, ys, zs = proj3d.proj_transform(xs3d, ys3d, zs3d, renderer.M)
             self.set_positions((xs[0],ys[0]),(xs[1],ys[1]))
             FancyArrowPatch.draw(self, renderer)
+            
+def reversehash(dictobj):
+    return {item[1]:item[0] for item in dictobj.items()}
 
 ###########################################################################################    
 #preprocessing
@@ -95,32 +97,39 @@ def createitem2emomapping(stimdf):
         item2emomapping['q%s' % row['qnum']]=row['emotion']
     return item2emomapping
     
-def setup(dfile, checks, item2emomapping, orderedemos, appraisals, subjcols, fixeditems):    
+def setup(dfile, checks, item2emomapping, orderedemos, appraisals, subjcols, fixeditems, normalize=False,visualize=True):    
     avgthresh=checks.values()[0][0]
     indthresh=checks.values()[0][1]
     df=pd.read_csv(dfile)
-    print "starting with %s rows" %(len(df))
+    print "starting with %s rows...." %(len(df))
     if 'surprised_dim' in appraisals and 'disgusted_dim' in appraisals:
         print "hack to convert disgusted and surprised from emos to appraisals"
-        df['surprised_dim'],df['disgusted_dim']=df['Surprised_extent'],df['Disgusted_extent']
+        df.loc[:,'surprised_dim']=df['Surprised_extent']
+        df.loc[:,'disgusted_dim']=df['Disgusted_extent']
     df=checkfornonnull(df, appraisals)
-    print "reduced to %s items by removing all-null entries" % (len(df))
+    print "reduced to %s items by removing all-null entries...." % len(df)
     df,fcounts=checkrange(df,appraisals)
-    print "altered out of range values for %s datapoints" %(fcounts)
+    print "altered out of range values for %s datapoints....." % fcounts
     df=deletecheckfailsubjs(df, checks.keys()[0], avgthresh)
-    print "reduced to %s items by removing check-failing subjects (avgthresh=%s)" %(len(df), avgthresh)
+    print "reduced to %s items by removing check-failing subjects (avgthresh=%s)....." %(len(df), avgthresh)
     df=deletecheckfailitems(df, checks.keys()[0], indthresh)
-    print "reduced to %s check-passing items (indthresh=%s)" %(len(df), indthresh)
+    print "reduced to %s check-passing items (indthresh=%s)....." %(len(df), indthresh)
     df=checkweird(df, orderedemos)
-    print "reduced to %s after eliminating acquisition errors" %(len(df))
+    print "reduced to %s after eliminating acquisition errors......" % len(df)
     df=defineitems(df, item2emomapping)  
-    print "added item and emo column"
     df,subjdf=makesubjdf(df, subjcols=subjcols)
-    print "data from %s unique subjects" %(len(subjdf)) 
+    print "added item and emo column" 
     df=deletecols(df, ['qemo', 'qlabel', 'main_character', 'submission_date'])
+    print "data from %s unique subjects" %(len(subjdf)) 
     df,dfexplicit=splitmainsubj(df, appraisals, orderedemos, fixeditems=fixeditems)
-    countitems(df)
+    if normalize:
+        df=normalizedf(df, appraisals)
+    countitems(df, visualize=visualize)
     return df, subjdf, dfexplicit
+    
+def normalizedf(df,appraisals):
+    df.loc[:,appraisals]=(df[appraisals] - df[appraisals].mean()) / (df[appraisals].std())     #normalize by row
+    return df
     
 def splitdf(df, subsets, fixedcols):
     dfdict={}
@@ -146,7 +155,7 @@ def checkfornonnull(df, appraisals):
     return df[dffilter]
     
 def checkrange(df,appraisals):
-    df[appraisals]=df[appraisals].astype(float)
+    df.loc[:,appraisals]=df[appraisals].astype(float)
     failures=0
     for index,row in df.iterrows():
         if any(row[appraisals]>10) or any(row[appraisals]<0):
@@ -179,8 +188,8 @@ def checkweird(df, orderedemos):
 
 def defineitems(df, item2emomapping):
     items=[[el for el in row.values if type(el)==str and el[0]=='q'][0] for index,row in df.iterrows()] #find number of distinct items in row
-    df['item']=items
-    df['emo']=[item2emomapping[item] for item in items]
+    df.loc[:,'item']=items
+    df.loc[:,'emo']=[item2emomapping[item] for item in items]
     cols=['item', 'emo']
     cols.extend([col for col in df.columns if col not in cols])
     return df[cols]
@@ -201,11 +210,12 @@ def deletecols(df, dlist):
     print "reduced from %s to %s columns" %(len(df.columns), len(cols)) 
     return df[cols]
     
-def countitems(df):
+def countitems(df, visualize=True):
     counts=df.groupby('item')['rownum'].count()
-    plt.figure(figsize=[16,2])
-    counts.plot(kind='bar')
-    plt.show()
+    if visualize:
+        plt.figure(figsize=[16,2])
+        counts.plot(kind='bar')
+        plt.show()
     print "%s to %s responses per item (mean=%.3f)" %(min(counts.values), max(counts.values), np.mean(counts.values))
             
     
@@ -379,31 +389,40 @@ def plotinputincomponentspace(obsscores, axislabels, item2emomapping, componenti
 ###########################################################################################    
             
 def createCVindices(df, classcol, generalizationcol=None, nfolds=2):
-    df['CVI']=[np.nan for el in range(len(df))]
+    '''create cross-validation indices as new column "CVI" in the dataset. if generalizationcol is provided, all instances of a given value of that column will be assigned to a single fold, requiring generalization across this dimension'''
+    df.loc[:,'CVI']=[np.nan for el in range(len(df))]
     for u in df[classcol].unique(): #for each value of classification label
         tempdf=df[df[classcol]==u]
-        indices=[el for el in tempdf.index.values]
-        np.random.shuffle(indices)
-        tempdf=tempdf.ix[indices,:]
-        cvcounter=cycle(range(nfolds))
         if not generalizationcol: #not requiring generalization across any dimension
-            #cycle through assigning CV indices to all entries
-            for index,row in tempdf.iterrows():
-                df.ix[index,'CVI']=cvcounter.next()
+            cvindices=np.hstack([np.zeros(len(tempdf)/2+np.mod(len(tempdf),2)),np.ones(len(tempdf)/2)])
+            np.random.shuffle(cvindices)
+            df.ix[tempdf.index.values,'CVI']=cvindices
         else: # requiring generalization across the <withinfoldcol> dimension
             generalizationuniques=tempdf[generalizationcol].unique()
-            for g in generalizationuniques:
-                gcount=cvcounter.next()
+            cvindices=np.hstack([np.zeros(len(generalizationuniques)/2+np.mod(len(generalizationuniques),2)),np.ones(len(generalizationuniques)/2)])
+            np.random.shuffle(cvindices) 
+            for gn,g in enumerate(generalizationuniques):
                 innertempdf=tempdf[tempdf[generalizationcol]==g] #assign same CV index to all entries that g
-                for index,row in innertempdf.iterrows():
-                    df.ix[index, 'CVI']=gcount
+                df.ix[innertempdf.index.values,'CVI']=cvindices[gn]
     return df
+    
+def compressdf(df, labelcol, exemplarcol):
+    '''take df and compress to summary df with single array of features (average) for each unique exemplar'''
+    item2indexdict=df.groupby(exemplarcol).groups #create dict to map exemplars to labels
+    modeldata=df.groupby(exemplarcol).mean()
+    modeldata.insert(0, exemplarcol, modeldata.index)
+    modeldata.insert(1, labelcol, [df.ix[item2indexdict[i][0],labelcol] for i in modeldata.index.values])
+    return modeldata
 
-def classify(df, labelcol, featurenames, folds, exemplarcol,gencol=None):
-    folds={'train':[0],'test':[1], 'nfolds':2}
-    ndimdf=createCVindices(df, labelcol, generalizationcol=gencol, nfolds=folds['nfolds'])
-    train=ndimdf[ndimdf['CVI']==folds['train']]
-    test=ndimdf[ndimdf['CVI']==folds['test']]
+def classify(df, labelcol, featurenames, folds, exemplarcol, gencol=None):
+    '''classify with linear SVM'''
+    df=createCVindices(df, labelcol, generalizationcol=gencol, nfolds=folds['nfolds'])
+    train=df[df['CVI']==folds['train']]
+    test=df[df['CVI']==folds['test']]
+    train=compressdf(train, labelcol, exemplarcol)
+    test=compressdf(test, labelcol, exemplarcol)
+    if gencol and any([v in train[exemplarcol].values for v in test[exemplarcol].values]):
+        warnings.warn('% repeated across training and test folds (supposed to be generalizing across %s)' %(gencol))
     train_X,test_X=train[featurenames].values,test[featurenames].values
     train_Y,test_Y=train[labelcol].values,test[labelcol].values
     clf=mcfg.SVM_model()
@@ -412,8 +431,9 @@ def classify(df, labelcol, featurenames, folds, exemplarcol,gencol=None):
     return predictions, test_Y, test[exemplarcol].values
 
 def updateexemplars(df, exemplarcol, iteration, exemplarindices, exemplaraccs):
+    '''add accuracies for individual items from this iteration of classification'''
     colname='acc_iter%s' % iteration
-    df[colname]=np.nan
+    df.loc[:,colname]=np.nan
     uniqueexemplars=df[exemplarcol].values
     for e in uniqueexemplars:
         try:
@@ -425,22 +445,22 @@ def updateexemplars(df, exemplarcol, iteration, exemplarindices, exemplaraccs):
     return df
 
 def compressexemplars(df):
+    '''average the individual item accuracy across different iterations of the iterative classifiction procedure'''
     acccols=[col for col in df.columns if 'acc_iter' in col]
-    df['mean_acc']=df[acccols].mean(axis=1, skipna=True)
+    df.loc[:,'mean_acc']=df[acccols].mean(axis=1, skipna=True)
     for col in acccols:
         del df[col]
     return df
     
 def iterativeclassification(df, classcol, featurecols, folds, labelorder, exemplarcol=None, gencol=None, iterations=10):
-    print "computing classification accuracy over %s iterations of randomized split-half training and testing" %(iterations)
-    confmat,meanacc,labelaccs,accs=[],[],[],[]
+    confmat,meanacc,labelaccs,accs,sims=[],[],[],[],[]
     uniqueexemplars=list(set(df[exemplarcol]))
     exemplardf=pd.DataFrame(index=range(len(uniqueexemplars)))
-    exemplardf[exemplarcol]=uniqueexemplars
+    exemplardf.loc[:,exemplarcol]=uniqueexemplars
     for i in range(iterations):
         predictions, labels, exemplarindices=classify(df,classcol, featurecols, folds, exemplarcol=exemplarcol, gencol=gencol)
         confmat.append(makeconfmat(predictions, labels, labelorder))
-        m, ec, exemplaracc=accuracies(predictions, labels, labelorder)
+        m, ec, exemplaracc=accuracies(labels,predictions,labelorder)
         meanacc.append(m)
         labelaccs.append(ec)
         exemplardf=updateexemplars(exemplardf, exemplarcol, i, exemplarindices, exemplaracc)
@@ -450,8 +470,31 @@ def iterativeclassification(df, classcol, featurecols, folds, labelorder, exempl
     exemplardf=compressexemplars(exemplardf)
     print "overall classification across iterations: %.2f%%" %(meanacc*100)
     return confmat, meanacc, labelaccs, exemplardf
+
+def similarity(array1,array2, simtype='pearsonr'):
+    '''compute similarity between 2 arrays'''
+    if simtype=='pearsonr':
+        corr,p=scipy.stats.pearsonr(array1,array2)
+    if simtype=='spearmanr':
+        corr,p=scipy.stats.spearmanr(array1,array2)
+    return corr,p
+    
+def compareconfmats(confvalues,labelorder,comparisons, plot=False, ax=None):
+    '''compare raw behavioral confusion matrix from NDE with with confusion matrix from a model-based classification'''
+    compconf=comparisons['cprop']
+    compconf=compconf.ix[labelorder,labelorder]
+    comparray,confarray=compconf.values.flatten(),confvalues.flatten()
+    if any([any(compconf.columns!=labelorder), any(compconf.index!=labelorder)]):
+        warnings.warn('label values are not aligned')
+    corr,p=similarity(confarray,comparray, simtype='spearmanr')
+    if plot:
+        tempdf=pd.DataFrame(data={'behavioral confusions (NDE)':comparray, 'model confusions':confarray})
+        ax.set_title('spearmanr=%.3f, p=%.3f' %(corr,p))
+        sns.regplot(x='behavioral confusions (NDE)', y='model confusions', data=tempdf,ax=ax)
+    return corr,p
     
 def makeconfmat(predictions, labels, labelorder):
+    '''make a confusion matrix from a set of predictions and labels'''
     confmat=np.zeros([len(labelorder),len(labelorder)])
     pairs=zip(labels,predictions)
     for label in labelorder:
@@ -461,6 +504,7 @@ def makeconfmat(predictions, labels, labelorder):
     return confmat
     
 def accuracies(labels, predictions, labelorder):
+    '''returns trial-wise accuracy (acc), mean accuracy across all trials in the iteration (meancc) and label-wise accuracy (labelaccs)'''
     acc=[int(pred==labels[predn]) for predn,pred in enumerate(predictions)]
     meanacc=np.mean(acc)
     labelaccs=[]
@@ -469,18 +513,25 @@ def accuracies(labels, predictions, labelorder):
         labelaccs.append(np.mean(relguesses))
     return meanacc, labelaccs, acc
 
-def visualizeclassification(confmat, labelaccs, orderedlabels, figsize=[10,3], comparisons=None):
-    f,ax=plt.subplots(1,2, figsize=figsize)
+def visualizeclassification(confmat, labelaccs, orderedlabels, figsize=[12,3], comparisons=None):
+    '''plot classification results'''
+    if comparisons:
+        f,ax=plt.subplots(1,4, figsize=figsize)
+    else:
+        f,ax=plt.subplots(1,2, figsize=figsize)
     plotmatrix(confmat, title='confusion matrix', ylabel='label', xlabel='guesses', xticklabels=orderedlabels,yticklabels=orderedlabels, ax=ax[0])
     plotbar(labelaccs, xlabel='true label', ylabel='percent correct (%)', title='accuracies', xticklabels=orderedlabels, ax=ax[1], ylim=[0,1])
     if comparisons:
-        raw=comparisons['csummary'].accuracy
-        rawvals=[raw.ix[emo] for emo in orderedlabels]
-        modelvals=[el for el in labelaccs]
-        tempdf=pd.DataFrame(data={'raw accuracy':rawvals, 'model accuracy':modelvals})
-        sns.jointplot(x='raw accuracy', y='model accuracy', data=tempdf, kind="reg", size=3.5)
-        plt.xlabel('raw accuracy')
-        plt.ylabel('model accuracy')
+        #compare emoaccs
+        axis=ax[2]
+        rawvals=[comparisons['csummary'].accuracy.ix[emo] for emo in orderedlabels]
+        tempdf=pd.DataFrame(data={'raw accuracy':rawvals, 'model accuracy':[el for el in labelaccs]})
+        r,p=scipy.stats.pearsonr(tempdf['raw accuracy'],tempdf['model accuracy'])
+        axis.set_title('pearsonr=%.3f, p=%.3f' %(r,p))
+        sns.regplot(x='raw accuracy', y='model accuracy', data=tempdf,ax=axis)
+        #compare to confusions from NDE
+        axis=ax[3]
+        compareconfmats(confmat,orderedlabels,comparisons, plot=True, ax=axis)
         
 class ClassificationResult():
     def __init__(self, model, labelcol, features, gencol, iterations, orderedlabels):
@@ -499,13 +550,15 @@ class ClassificationResult():
             pickler = pickle.Pickler(output, pickle.HIGHEST_PROTOCOL)
             pickler.dump(self)
 
-def classifiationwrapper(modeldata,allresults, chosenmodel, labelcol, features, gencol, iterations, orderedlabels, folds, rootdir, comparisons=None, visualize=True):
+def classificationwrapper(modeldata,allresults, chosenmodel, labelcol, features, gencol, iterations, orderedlabels, folds, rootdir, comparisons=None, visualize=True):
+    '''cleaning up the notebook with a dummy wrapper'''
     result= ClassificationResult(chosenmodel, labelcol, features, gencol, iterations, orderedlabels)
+    print "classifying %s with generalization across %s: %s iterations of randomized split-half train/test" %(chosenmodel, gencol,iterations)
     result.confmat, result.meanacc, result.labelaccs, result.exemplaraccs=iterativeclassification(modeldata, labelcol, features, folds, orderedlabels, exemplarcol='item', gencol=gencol, iterations=iterations)
     allresults['%s_%s' %(chosenmodel, gencol)]=result
-    print 'adding output for %s_%s' %(chosenmodel, gencol)    
     if visualize:    
         visualizeclassification(result.confmat, result.labelaccs, orderedlabels, comparisons=comparisons)
+        plt.tight_layout()
         plt.show()
     result.save(os.path.join(rootdir, 'results','%s_%s_results.pkl' %(chosenmodel, gencol)))
     return allresults
@@ -514,15 +567,38 @@ def classifiationwrapper(modeldata,allresults, chosenmodel, labelcol, features, 
 #comparing
 ###########################################################################################    
 
-
-
-
+def plotacccomparison(resultsdict, keys=[], flags=[], benchmark=None):
+    '''plot meanacc for each model space'''
+    if len(keys)==0:
+        keys=list(set([k[0:k.index('_')] for k in resultsdict.keys()]))
+    if len(flags)==0:
+        flags=list(set([k[0:k.index('_')] for k in resultsdict.keys()]))
+    f,ax=plt.subplots(1,len(flags), sharey=True)
+    f.suptitle('model comparisons')
+    ax[0].set_ylabel('accuracy (mean % across iterations)')
+    for fn,f in enumerate(flags):
+        if f:
+            xlabel="generalization across %s" % f
+        else:
+            xlabel="no generalization"
+        accs=[resultsdict[k+'_'+f].meanacc for k in keys]
+        axis=ax[fn]
+        axis.bar(range(len(accs)),accs)
+        axis.set_xticks(np.arange(len(keys))+.5)
+        axis.set_xticklabels(keys, rotation=90)
+        axis.set_xlabel(xlabel)
+        if benchmark:
+            axis.plot(axis.get_xlim(),[benchmark, benchmark], linestyle='--', alpha=.4)
+    
 ###########################################################################################    
 #similarity spaces
 ###########################################################################################    
 
-def createsimmtxfrominput(df):
-    return matrix, labels
+def createfeaturespace(df, features):
+    meandf=df[features].groupby('item').mean()
+    labels=meandf.index.values
+    matrix=meandf.values
+    return {'itemavgs':list(matrix), 'itemlabels':list(labels)}
     
 def createsimmtxfromconfmat(confmat, labels):
-    return matrix, labels
+    return {'confmat':confmat, 'labels':labels}   
