@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pickle
 import warnings
+from copy import deepcopy
 import datetime
 from itertools import cycle
 import scipy.stats
@@ -41,7 +42,7 @@ def plotbar(array, xlabel='', ylabel='', title='', xticklabels=None, ax=None, fi
     if ylim:
         ax.set_ylim(ylim)
     
-def plotmatrix(matrix, xlabel='', ylabel='', ax=None, title='', colorbar=False, figsize=[4,3], xticklabels=None, yticklabels=None):
+def plotmatrix(matrix, xlabel='', ylabel='', ax=None, title='', colorbar=False, figsize=[4,3], xticklabels=[], yticklabels=[]):
     matrix=np.array(matrix)
     if not ax:
         f,ax=plt.subplots(figsize=figsize)
@@ -51,10 +52,10 @@ def plotmatrix(matrix, xlabel='', ylabel='', ax=None, title='', colorbar=False, 
     im=ax.pcolor(matrix)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
-    if xticklabels:
+    if len(xticklabels)>0:
         ax.set_xticks(np.arange(len(xticklabels))+.5)
         ax.set_xticklabels(xticklabels, rotation=90)
-    if yticklabels:
+    if len(yticklabels)>0:
         ax.set_yticks(range(len(yticklabels)))
         ax.set_yticklabels(yticklabels)
     if colorbar:
@@ -85,6 +86,7 @@ class Arrow3D(FancyArrowPatch):
             FancyArrowPatch.draw(self, renderer)
             
 def reversehash(dictobj):
+    '''reverses a dict with 1 to 1 mapping'''
     return {item[1]:item[0] for item in dictobj.items()}
 
 ###########################################################################################    
@@ -396,7 +398,12 @@ def createCVindices(df, classcol, generalizationcol=None, nfolds=2):
         if not generalizationcol: #not requiring generalization across any dimension
             cvindices=np.hstack([np.zeros(len(tempdf)/2+np.mod(len(tempdf),2)),np.ones(len(tempdf)/2)])
             np.random.shuffle(cvindices)
-            df.ix[tempdf.index.values,'CVI']=cvindices
+            try:
+                df.ix[tempdf.index.values,'CVI']=cvindices
+            except: #no idea why, but this seems to be required for the explicits... figure this out
+                for index, row in df.iterrows():
+                    if index in tempdf.index.values:
+                        df.ix[index,'CVI']=cvindices[list(tempdf.index.values).index(index)]
         else: # requiring generalization across the <withinfoldcol> dimension
             generalizationuniques=tempdf[generalizationcol].unique()
             cvindices=np.hstack([np.zeros(len(generalizationuniques)/2+np.mod(len(generalizationuniques),2)),np.ones(len(generalizationuniques)/2)])
@@ -419,12 +426,15 @@ def classify(df, labelcol, featurenames, folds, exemplarcol, gencol=None):
     df=createCVindices(df, labelcol, generalizationcol=gencol, nfolds=folds['nfolds'])
     train=df[df['CVI']==folds['train']]
     test=df[df['CVI']==folds['test']]
+    print labelcol
     train=compressdf(train, labelcol, exemplarcol)
     test=compressdf(test, labelcol, exemplarcol)
+    print train[labelcol].values
     if gencol and any([v in train[exemplarcol].values for v in test[exemplarcol].values]):
         warnings.warn('% repeated across training and test folds (supposed to be generalizing across %s)' %(gencol))
     train_X,test_X=train[featurenames].values,test[featurenames].values
     train_Y,test_Y=train[labelcol].values,test[labelcol].values
+    print train_Y
     clf=mcfg.SVM_model()
     clf=clf.fit(train_X,train_Y)
     predictions=clf.predict(test_X)
@@ -550,16 +560,12 @@ class ClassificationResult():
             pickler = pickle.Pickler(output, pickle.HIGHEST_PROTOCOL)
             pickler.dump(self)
 
-def classificationwrapper(modeldata,allresults, chosenmodel, labelcol, features, gencol, iterations, orderedlabels, folds, rootdir, comparisons=None, visualize=True):
+def classificationwrapper(modeldata,allresults, chosenmodel, labelcol, features, gencol, iterations, orderedlabels, folds, rootdir):
     '''cleaning up the notebook with a dummy wrapper'''
     result= ClassificationResult(chosenmodel, labelcol, features, gencol, iterations, orderedlabels)
     print "classifying %s with generalization across %s: %s iterations of randomized split-half train/test" %(chosenmodel, gencol,iterations)
     result.confmat, result.meanacc, result.labelaccs, result.exemplaraccs=iterativeclassification(modeldata, labelcol, features, folds, orderedlabels, exemplarcol='item', gencol=gencol, iterations=iterations)
     allresults['%s_%s' %(chosenmodel, gencol)]=result
-    if visualize:    
-        visualizeclassification(result.confmat, result.labelaccs, orderedlabels, comparisons=comparisons)
-        plt.tight_layout()
-        plt.show()
     result.save(os.path.join(rootdir, 'results','%s_%s_results.pkl' %(chosenmodel, gencol)))
     return allresults
     
@@ -595,10 +601,162 @@ def plotacccomparison(resultsdict, keys=[], flags=[], benchmark=None):
 ###########################################################################################    
 
 def createfeaturespace(df, features):
-    meandf=df[features].groupby('item').mean()
-    labels=meandf.index.values
-    matrix=meandf.values
-    return {'itemavgs':list(matrix), 'itemlabels':list(labels)}
+    labels=df.item.values
+    features=[el for el in features if el not in ('emo', 'CVI','item')]
+    matrix=df[features].values
+    return {'itemavgs':list(matrix), 'itemlabels':list(labels), 'features':features}
     
-def createsimmtxfromconfmat(confmat, labels):
-    return {'confmat':confmat, 'labels':labels}   
+def makeconfdict(savedconf, orderedemos):
+    labelorder=savedconf.orderedlabels
+    oldmatrix=savedconf.confmat
+    matrix,labels=[],[]
+    for e in orderedemos:
+        matrix.append(oldmatrix[labelorder.index(e)])
+    return {'simmat_across':matrix, 'simmat':None, 'labels':orderedemos}
+    
+def makesimspaces(rsadict, item2emomapping, orderedemos, similarity='euclidean', groupcol='emo', itemindices=None, iterations=10):
+    '''make RDMs for each of the models.'''
+    matrix, items, emos= rsadict['itemavgs'], rsadict['itemlabels'], [item2emomapping[i] for i in rsadict['itemlabels']]
+    data={'item':items, 'emo':emos}
+    for fn,f in enumerate(matrix[0]):
+        data[fn]=[line[fn] for line in matrix]
+    df=pd.DataFrame(data=data)
+    grouped, order=compressrdmfeatures(df, groupcol, orderedemos, item2emomapping)
+    RSAmat_untransformed = scipy.spatial.distance.cdist(grouped.values, grouped.values, similarity)
+    RSAmat = transformsimilarities(RSAmat_untransformed, similarity)
+    crossRSAmat=makesimmatrixacross(df, groupcol, order, similarity, item2emomapping, iterations)
+    return {'simmat':RSAmat, 'simmat_across':crossRSAmat, 'labels':order}
+
+def compressrdmfeatures(df, groupcol, orderedemos, item2emomapping):
+    '''compresses and orders the feature space'''
+    appraisals=[col for col in df.columns if col not in ['item','emo']]
+    grouped=df.groupby(groupcol).mean()
+    if groupcol == 'item':
+        itemlabels=[el for el in grouped.index.values]
+        order=orderitems(itemlabels, orderedemos, item2emomapping)
+    elif groupcol == 'emo':
+        order=orderedemos
+    grouped=grouped.ix[order,appraisals]
+    return grouped, order
+
+def makesimmatrixacross(df, groupcol, order, similarity, item2emomapping, iterations):
+    '''computes model matrix across different subsets of the data'''
+    RSAmats=[]
+    for i in range(iterations):
+        idx1,idx2=[],[]
+        for o in order:
+            indices=[i for i in df.index if df.ix[i,groupcol]==o] 
+            np.random.shuffle(indices)
+            idx1.extend(indices[0:len(indices)/2])
+            idx2.extend(indices[len(indices)/2:])
+        df1=df.ix[idx1,:]
+        df2=df.ix[idx2,:]
+        grouped1, order1=compressrdmfeatures(df1, groupcol, order, item2emomapping)
+        grouped2, order2=compressrdmfeatures(df2, groupcol, order, item2emomapping)
+        RSAmats.append(scipy.spatial.distance.cdist(grouped1.values, grouped2.values, similarity))
+    RSAmat_untransformed=np.mean(RSAmats, axis=0)
+    return transformsimilarities(RSAmat_untransformed, similarity)
+    
+def transformsimilarities(repdismat, distance):
+    '''return transformed similarity matrices'''
+    rdm = deepcopy(repdismat)
+    if distance == 'euclidean':
+        rdm=transformedm(rdm)
+    elif distance == 'pearsonr':
+        rdm = np.arctanh(rdm)
+    else:
+        warnings.warn('transformation not implemented for distance type %s' % distance)
+    return rdm
+
+def orderitems(itemlabels, orderedemos, item2emomapping):
+    '''order items first based on orderedemos, then based on item number'''
+    ordereditems=[]
+    for e in orderedemos:
+        ordereditems.extend(['q%.0f' % el for el in np.sort([int(item[1:]) for item in itemlabels if item2emomapping[item]==e])])
+    return ordereditems
+    
+def euclideandistancematrix(matrix):
+    '''take a matrix of items in rows and features in columns and return a similarity space of items'''
+    distancematrix= scipy.spatial.distance.cdist(matrix.values, matrix.values, 'euclidean')
+    return distancematrix, transformedm(distancematrix)
+    
+def transformedm(dm):
+    '''transforms a euclidean distance matrix by subtracting the min and dividing by max-min'''
+    dm=np.array(dm).astype(float)
+    maxdist, mindist = np.max(dm), np.min(dm)
+    tdm=(dm-mindist)/(maxdist-mindist)
+    return tdm
+    
+def plotrsadict(rsadict, item2emomapping, title, collapse='emo', order=[], ax=None):
+    '''function to plot a feature space'''
+    rsamatrix,labels,features=rsadict['itemavgs'],rsadict['itemlabels'],rsadict['features']
+    df=pd.DataFrame(data={'item':labels, 'emo':[item2emomapping[l] for l in labels]})
+    for fn,f in enumerate(features):
+        df[f]=[line[fn] for line in rsamatrix]
+    avgs=df.groupby(collapse).mean()[features]
+    if len(order)>0:
+        avgs=avgs.loc[order]
+    if not ax:
+        f,ax=plt.subplots(figsize=[4,2.5])
+    if len(features)==1:
+        avgs.plot(kind='barh', legend=False, ax=ax)
+    else:
+        plotmatrix(avgs.values, ax=ax)
+        ax.set_xticks(np.arange(len(features))+.5)
+        ax.set_yticks(range(len(avgs.index.values)))
+        ax.set_xticklabels(features, rotation=90)
+        ax.set_yticklabels(avgs.index.values)
+    ax.set_title(title)
+    
+def visualizeinputs(inputspaces, orderedemos, item2emomapping, ncols=3, collapse='emo'):
+    print "*********************************INPUT FEATURE SPACES**********************************"
+    numspaces=len(inputspaces.keys())
+    f,ax=plt.subplots(int(np.ceil(numspaces/float(ncols))),ncols, figsize=[16,10])
+    for keyn,key in enumerate(inputspaces.keys()):
+        axis=ax[keyn/ncols,keyn%ncols]
+        plotrsadict(inputspaces[key], item2emomapping, key, collapse='emo', order=orderedemos, ax=axis)
+    plt.show()
+    return ax
+
+def visualizeRDMs(allrsasimspaces, orderedemos, ncols=3):
+    print "*****************************REPRESENTATIONAL DISSIMILARITY MATRICES******************************"
+    numspaces=len(allrsasimspaces.keys())
+    f,ax=plt.subplots(int(np.ceil(numspaces/float(ncols))),ncols, figsize=[16,10])
+    for keyn,key in enumerate(allrsasimspaces.keys()):
+        axis=ax[keyn/ncols,keyn%ncols]
+        rsamat, labels=allrsasimspaces[key]['simmat_across'],allrsasimspaces[key]['labels']
+        plotmatrix(rsamat, ax=axis, xticklabels=labels, yticklabels=labels, title=key)
+    plt.show()
+    return ax
+    
+#specialized similarity matrix functions    
+def makeNDEconfmat(conf, labelorder):
+    conf=conf.ix[labelorder,labelorder]
+    return {'simmat_across':conf.values,'simmat':None, 'labels':conf.columns}
+    
+def makecosineconfmat(cosinedict, labelorder, item2emomapping, iterations=2,similarity='euclidean'):
+    items=cosinedict['itemlabels']
+    mat=[list(line) for line in cosinedict['matrix']]
+    emos=[item2emomapping[item] for item in items]
+    df=pd.DataFrame(data={'item':items, 'emo':emos}, index=items)
+    for itemn,item in enumerate(items):
+        df[item]=[line[itemn] for line in mat]
+    matrices=[]
+    for i in range(iterations):
+        idx1,idx2=[],['emo']
+        emodf=pd.DataFrame(index=labelorder, columns=labelorder)
+        for cond in labelorder:
+            indices=df[df['emo']==cond].index.values
+            np.random.shuffle(indices)
+            idx1.extend(indices[0:5])
+            idx2.extend(indices[5:10])
+        iterdf=df.ix[idx1,idx2]
+        emodf=iterdf.groupby('emo').mean().T
+        emodf.index=[item2emomapping[e] for e in emodf.index]
+        emodf=emodf.groupby(emodf.index).mean()
+        matrices.append(emodf.values)
+    simmat_untransformed=np.mean(matrices,axis=0)
+    simmat_untransformed=-1*simmat_untransformed
+    simmat = transformsimilarities(simmat_untransformed, similarity)
+    return {'simmat':None, 'simmat_across':simmat, 'labels':labelorder}  
+    

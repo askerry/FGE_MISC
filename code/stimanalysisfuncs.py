@@ -6,6 +6,8 @@ Created on Sat Sep  6 08:18:21 2014
 """
 import pandas as pd
 import numpy as np
+import NDIM as ndimf
+from copy import deepcopy
 
 #############################################################################
 #general
@@ -36,7 +38,7 @@ def bagofwords(df, item2emomapping):
     bagofwords=bagofwords.toarray()
     itemavgs=[list(line) for line in bagofwords]
     ndf=makedataframe(itemavgs, itemlabels, item2emomapping)
-    return ndf, {'itemavgs':itemavgs, 'itemlabels':itemlabels}
+    return ndf
 
 #smarter tf-idf based text similarity
 def pagerank(df, item2emomapping):
@@ -68,26 +70,30 @@ def pagerank(df, item2emomapping):
             print "docs most related to doc #%s are %s." %(index, ', '.join([str(el) for el in most_related_docs_indices]))
             print "there similarities are %s." %(', '.join([str(el) for el in most_related_similarities]))
         return cosine_similarities
-    
+    def nandiagmatrix(matrix):
+        nanmatrix=deepcopy(matrix)
+        for eln,el in enumerate(matrix):
+            nanmatrix[eln][eln]=np.nan
+        return nanmatrix
     def FGEcosinesimilarity(df):
-        listofstrings=list(df['cause'].values)
-        itemlabels=['q%0.f'%qnum for qnum in df['qnum'].values]
         tfidf = TfidfVectorizer(tokenizer=tokenize, stop_words='english')
         tfs = tfidf.fit_transform(listofstrings)
         simmatrix=[]
         for ln,l in enumerate(listofstrings):
             similarities=singletextsimilarity(tfs,ln, listofstrings)
             simmatrix.append(similarities)
-        return simmatrix, itemlabels
+        return simmatrix
+        
     listofstrings=list(df['cause'].values)
     itemlabels=['q%0.f'%qnum for qnum in df['qnum'].values]      
     simmatrix=FGEcosinesimilarity(listofstrings)
-    simmatrix={'matrix':nandiagmatrix(simmatrix), 'itemlabels':itemlabels}
-    viz.simplematrix(FGEcosinesimilarity(listofstrings))
-    with open(cosinesimfile, 'wb') as output:
-        pickler = pickle.Pickler(output, pickle.HIGHEST_PROTOCOL)
-        pickler.dump(simmatrix)
-    return simmatrix
+    nanmatrix=nandiagmatrix(simmatrix)
+    simoutput={'matrix':nanmatrix, 'itemlabels':itemlabels}
+    ndimf.plotmatrix(np.array(simmatrix), xlabel='diag non-independent')
+    #with open(cosinesimfile, 'wb') as output:
+    #    pickler = pickle.Pickler(output, pickle.HIGHEST_PROTOCOL)
+    #    pickler.dump(simoutput)
+    return simoutput
     
     
     
@@ -108,8 +114,7 @@ def naivebayes(df, item2emomapping, trainset=[]):
         stems = stem_tokens(filtered, stemmer)
         finaltokens={word:True for word in stems}
         return finaltokens
-    def twitterclassifier(tokenizer,trainset, teststrings):
-        trainfeats = [(tokenizer(tup[0]),tup[1]) for tup in trainset]
+    def twitterclassifier(tokenizer,trainfeats, teststrings):
         testtokens=[string.split(' ') for string in teststrings]
         testfeats=[tokenizer(tokens) for tokens in testtokens]
         print "training on %s item training set (Twitter)." %(len(trainfeats))
@@ -122,22 +127,22 @@ def naivebayes(df, item2emomapping, trainset=[]):
             probabilities.append((pdist.prob('pos'), pdist.prob('neg')))
             predictions.append(label)
         return predictions, probabilities
-    def maketrainset(movie_reviews):
+    def maketrainset(movie_reviews, tokenizer):
         negids = movie_reviews.fileids('neg')
         posids = movie_reviews.fileids('pos')
-        negfeats = [(movie_reviews.words(fileids=[f]), 'neg') for f in negids]
-        posfeats = [(movie_reviews.words(fileids=[f]), 'pos') for f in posids]
+        negfeats = [(tokenizer(movie_reviews.words(fileids=[f])), 'neg') for f in negids]
+        posfeats = [(tokenizer(movie_reviews.words(fileids=[f])), 'pos') for f in posids]
         trainfeats = negfeats + posfeats
         return trainfeats
     ##run it
     listofstrings=list(df['cause'].values)
     itemlabels=['q%0.f'%qnum for qnum in df['qnum'].values]
     if len(trainset)==0:
-        trainset=maketrainset(movie_reviews)
+        trainset=maketrainset(movie_reviews, preptokens)
     predictions, probabilities=twitterclassifier(preptokens,trainset, listofstrings)
     itemavgs=[[p[0]] for p in probabilities]
     ndf=makedataframe(itemavgs, itemlabels, item2emomapping)
-    return ndf, {'itemavgs':itemavgs, 'itemlabels':itemlabels}
+    return ndf
 
 
 #cohmetrix
@@ -153,7 +158,7 @@ def computecohmetrixspace(df, item2emomapping, cols=[], excludecols=[]):
     #print df.describe()
     itemavgs=[line for line in df.values][0:200]
     ndf=makedataframe(itemavgs, itemlabels, item2emomapping)
-    return ndf, {'itemavgs':itemavgs, 'itemlabels':itemlabels}
+    return ndf
 
 
 #behavioral intensity
@@ -162,11 +167,11 @@ def behavioralintensity(df, item2emomapping):
     itemlabels=list(grouped.index.values)
     itemavgs=[[el] for el in list(grouped['intensities'].values)]
     ndf=makedataframe(itemavgs, itemlabels, item2emomapping)
-    return ndf, {'itemavgs':itemavgs, 'itemlabels':itemlabels}
+    return ndf
 
 def deeplearningsentiment(df, item2emomapping):
     df=df[df['qnum']<=200]
     itemlabels=list(['q%.0f' % qnum for qnum in df['qnum'].values])
     itemavgs=[[el] for el in list(df['stimsavg'].values)]
     ndf=makedataframe(itemavgs, itemlabels, item2emomapping)
-    return ndf, {'itemavgs':itemavgs, 'itemlabels':itemlabels}
+    return ndf
