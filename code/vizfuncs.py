@@ -14,8 +14,16 @@ from mpl_toolkits.mplot3d import proj3d
 import collections
 import seaborn as sns
 import warnings
+import FGE_MISC.code.config as cfg
 
 # #general
+
+try:
+    sns.set_style('white')
+    sns.set_context('notebook')
+except:
+    sns.set_axes_style("white", "notebook")
+
 def nonnancorr(array1, array2):
     if np.isnan(np.sum(array1)) or np.isnan(np.sum(array2)):
         array1, array2 = np.array(array1), np.array(array2)
@@ -36,6 +44,15 @@ def similarity(array1, array2, simtype='pearsonr'):
         corr, p = scipy.stats.spearmanr(array1, array2)
     return corr, p
 
+
+def tickify(ticklabels):
+    for v in cfg.tickcfg.values():
+        try:
+            nticklabels = [v[el] for el in nticklabels]
+            return nticklabels
+        except:
+            pass
+    return ticklabels
 
 #############################
 #NDE
@@ -93,10 +110,13 @@ def heatmapdf(df, xlabel=None, ylabel=None, title=None, xticklabels=None, ytickl
 #NDIM
 #############################
 
-def plotbar(array, xlabel='', ylabel='', title='', xticklabels=None, ax=None, figsize=[4, 3], ylim=None):
+def plotbar(array, yerr=None, xlabel='', ylabel='', title='', xticklabels=None, ax=None, fmt=None, figsize=[4, 3], ylim=None, colors=None):
     if not ax:
         f, ax = plt.subplots(figsize=figsize)
-    ax.bar(range(len(array)), array)
+    if yerr:
+        ax.errorbar(range(len(array)), array, yerr=yerr, color=colors, fmt=fmt)
+    else:
+        ax.bar(range(len(array)), array, color=colors)
     if xticklabels:
         ax.set_xticks(np.arange(len(xticklabels)) + .5)
         ax.set_xticklabels(xticklabels, rotation=90)
@@ -105,6 +125,79 @@ def plotbar(array, xlabel='', ylabel='', title='', xticklabels=None, ax=None, fi
     ax.set_xlabel(xlabel)
     if ylim:
         ax.set_ylim(ylim)
+    return ax
+
+def simplebar(values, width=.9, bars=True, elinewidth=2, markersize=None, fmt=None, xtickrotation=None, figsize=[4, 4],
+              yerr=None, xlabel=None, xlim=None, xticklabels=None, ylabel=None, yticklabels=None, title=None, ylim=None,
+              colors=['b'], chanceline=None, despine=False, show=True):
+    '''takes various optional parameters and makes simple bar chart. at minumim requires set of values to plot, nothing else.
+    example of more complex (and strange) usage: simplebar(values, yerr=[.2, .4, .5, .3, .6, .1], xlabel="x", ylabel="y", yticklabels=['1','2','6','7', 'g', 'h',  'j', 'v', '4'], xticklabels=['a','b','c','d','e','f'], chanceline={'chance':3, 'linetype':'solid', 'linecolor':'r'}, ylim=[-3,10])'''
+    #deal with some sns version issues
+    try:
+        sns.set_style('white')
+        sns.set_context('notebook')
+    except:
+        sns.set_axes_style("white", "notebook")
+    f, ax = plt.subplots(figsize=figsize)
+    if bars:
+        ax.bar(range(len(values)), values, color=colors, width=width)
+    if yerr:
+        if len(colors) > 1:
+            while len(colors) < len(values):
+                colors.extend(colors)
+            for vn, v in enumerate(values):
+                baseval = [0 for el in values]
+                basesem = [0 for el in values]
+                baseval[vn] = v
+                basesem[vn] = yerr[vn]
+                ax.errorbar(np.arange(len(baseval)) + width / 2, baseval, yerr=basesem, color=colors[vn],
+                            ecolor=colors[vn], linestyle='None', fmt=fmt, elinewidth=elinewidth, markersize=markersize)
+        else:
+            ax.errorbar(np.arange(len(values)) + width / 2, values, yerr=yerr, color=colors, linestyle='None', fmt=fmt,
+                        elinewidth=elinewidth, markersize=markersize)
+    if xlabel:
+        ax.set_xlabel(xlabel)
+    if ylabel:
+        ax.set_ylabel(ylabel)
+    if title:
+        ax.set_title(title)
+    if xticklabels:
+        if xtickrotation != None:
+            rotation = xtickrotation
+        else:
+            if len(xticklabels[0]) > 3:
+                rotation = 90
+            else:
+                rotation = 0
+        ax.set_xticks(np.arange(len(xticklabels)) + width / 2)
+        ax.set_xticklabels(xticklabels, rotation=rotation)
+    else:
+        ax.set_xticklabels([])
+    if yticklabels:
+        ax.set_yticklabels(yticklabels)
+    if ylim:
+        ax.set_ylim(ylim)
+    if not xlim:
+        xlim = [-width / 8, len(values)]
+    ax.set_xlim(xlim)
+    if chanceline:
+        chance = chanceline['chance']
+        try:
+            linetype = chanceline['linetype']
+        except:
+            linetype = 'dashed'
+        try:
+            linecolor = chanceline['linecolor']
+        except:
+            linecolor = 'orange'
+        ax.plot(xlim, [chance for el in xlim], ls=linetype, color=linecolor)
+    if despine:
+        sns.despine(fig=f, ax=ax, top=True, right=True, left=False, bottom=False, trim=False)
+    if show:
+        plt.show()
+    return ax
+
+
 
 
 def plotmatrix(matrix, xlabel='', ylabel='', ax=None, title='', colorbar=False, figsize=[4, 3], xticklabels=[],
@@ -125,7 +218,8 @@ def plotmatrix(matrix, xlabel='', ylabel='', ax=None, title='', colorbar=False, 
         ax.set_yticks(range(len(yticklabels)))
         ax.set_yticklabels(yticklabels)
     if colorbar:
-        plt.colorbar(im, cax=ax)
+        plt.colorbar(im)
+        #plt.colorbar(im, cax=ax)
 
 
 def compareconfmats(confvalues, labelorder, comparisons, plot=False, ax=None):
@@ -200,7 +294,7 @@ def plotrsadict(rsadict, item2emomapping, title, collapse='emo', order=[], ax=No
 
 
 def visualizeinputs(inputspaces, orderedemos, item2emomapping, ncols=3, collapse='emo'):
-    print "*********************************INPUT FEATURE SPACES**********************************"
+    print "************INPUT FEATURE SPACES*************"
     numspaces = len(inputspaces.keys())
     f, ax = plt.subplots(int(np.ceil(numspaces / float(ncols))), ncols, figsize=[16, numspaces])
     for keyn, key in enumerate(inputspaces.keys()):
@@ -211,13 +305,15 @@ def visualizeinputs(inputspaces, orderedemos, item2emomapping, ncols=3, collapse
     return ax
 
 
-def visualizeRDMs(allrsasimspaces, orderedemos, ncols=3):
-    print "*****************************REPRESENTATIONAL DISSIMILARITY MATRICES******************************"
-    numspaces = len(allrsasimspaces.keys())
-    keys_raw=[k for k in allrsasimspaces.keys() if 'conf' not in k]
-    keys_conf_None=[k for k in allrsasimspaces.keys() if 'None' in k]
-    keys_conf_item=[k for k in allrsasimspaces.keys() if 'item' in k]
-    keys=keys_raw+keys_conf_None+keys_conf_item
+def visualizeRDMs(allrsasimspaces, orderedemos, ncols=3, keys=[]):
+    print "************REPRESENTATIONAL DISSIMILARITY MATRICES***********"
+    if len(keys) == 0:
+        keys = allrsasimspaces.keys()
+    numspaces = len(keys)
+    keys_raw = [k for k in keys if 'rdm' in k]
+    keys_conf_None = [k for k in keys if 'None' in k]
+    keys_conf_item = [k for k in keys if 'item' in k]
+    keys = keys_raw + keys_conf_None + keys_conf_item
     f, ax = plt.subplots(int(np.ceil(numspaces / float(ncols))), ncols, figsize=[16, numspaces])
     for keyn, key in enumerate(keys):
         axis = ax[keyn / ncols, keyn % ncols]
@@ -228,12 +324,20 @@ def visualizeRDMs(allrsasimspaces, orderedemos, ncols=3):
     return ax
 
 
-#comparisons
+###################################
+#main results plots
+###################################
 
-def plotacccomparison(resultsdict, keys=[], flags=[], benchmark=None):
+def plotacccomparison(resultsdict, keys=[], flags=[], benchmark=None, chance=None, modelcolors=[]):
     '''plot meanacc for each model space'''
     if len(keys) == 0:
-        keys = list(set([k[0:k.index('_')] for k in resultsdict.keys()]))
+        allkeys = [k[0:k.index('_')] for k in resultsdict.keys()]
+    else:
+        allkeys = [k[0:k.index('_')] for k in keys]
+    keys = []
+    for k in allkeys:
+        if k not in keys:
+            keys.append(k)
     if len(flags) == 0:
         flags = list(set([k[0:k.index('_')] for k in resultsdict.keys()]))
     f, ax = plt.subplots(1, len(flags), sharey=True)
@@ -244,32 +348,50 @@ def plotacccomparison(resultsdict, keys=[], flags=[], benchmark=None):
             xlabel = "generalization across %s" % f
         else:
             xlabel = "no generalization"
-        accs = [resultsdict[k + '_' + f].meanacc for k in keys]
+        keys = [k for k in keys if 'cosine' not in k]
+        accs = [resultsdict[k + '_result_' + f].meanacc for k in keys]
+        if modelcolors:
+            colors = [modelcolors[k + '_confs_' + f] for k in keys]
         axis = ax[fn]
-        axis.bar(range(len(accs)), accs)
+        if modelcolors:
+            axis.bar(range(len(accs)), accs, color=colors)
+        else:
+            axis.bar(range(len(accs)), accs)
         axis.set_xticks(np.arange(len(keys)) + .5)
         axis.set_xticklabels(keys, rotation=90)
         axis.set_xlabel(xlabel)
         if benchmark:
             axis.plot(axis.get_xlim(), [benchmark, benchmark], linestyle='--', alpha=.4)
+        if chance:
+            axis.plot(axis.get_xlim(), [chance, chance], linestyle='--', alpha=.4, color='#CC5500')
+        sns.despine(ax=axis, top=True, right=True, left=False, bottom=False, trim=False)
+
 
 
 def plotcorrelationcomparison(resultsdict, orderedlabels, keys=[], flags=[], figsize=[12, 3], unit='items',
-                              comparisons=None):
+                              comparisons=None, modelcolors=[]):
     '''plot item-wise correlation for each model'''
     if len(keys) == 0:
-        keys = list(set([k[0:k.index('_')] for k in resultsdict.keys()]))
+        allkeys = [k[0:k.index('_')] for k in resultsdict.keys()]
+    else:
+        allkeys = [k[0:k.index('_')] for k in keys]
+    keys = []
+    for k in allkeys:
+        if k not in keys and 'cosine' not in k:
+            keys.append(k)
     if len(flags) == 0:
         flags = list(set([k[0:k.index('_')] for k in resultsdict.keys()]))
     f, ax = plt.subplots(1, len(flags), sharey=True)
     f.suptitle('model comparisons: item-wise correlations')
-    ax[0].set_ylabel('accuracy (mean % across iterations)')
+    ax[0].set_ylabel('item-wise accuracy correlation (mean % across iterations)')
     for fn, f in enumerate(flags):
         if f:
             xlabel = "generalization across %s" % f
         else:
             xlabel = "no generalization"
-        results = [resultsdict[k + '_' + f] for k in keys]
+        results = [resultsdict[k + '_result_' + f] for k in keys]
+        if modelcolors:
+            colors = [modelcolors[k + '_confs_' + f] for k in keys]
         resultsrs, resultsps, resultsns = [], [], []
         for result in results:
             confmat, labelaccs = result.confmat, result.labelaccs
@@ -292,16 +414,57 @@ def plotcorrelationcomparison(resultsdict, orderedlabels, keys=[], flags=[], fig
                 resultsps.append(p);
                 resultsns.append(n)
             axis = ax[fn]
+        if modelcolors:
+            axis.bar(range(len(resultsrs)), resultsrs, color=colors)
+        else:
             axis.bar(range(len(resultsrs)), resultsrs)
-            axis.set_xticks(np.arange(len(keys)) + .5)
-            axis.set_xticklabels(keys, rotation=90)
-            axis.set_xlabel(xlabel)
+        axis.set_xticks(np.arange(len(keys)) + .5)
+        axis.set_xticklabels(keys, rotation=90)
+        axis.set_xlabel(xlabel)
+        sns.despine(ax=axis, top=True, right=True, left=False, bottom=False, trim=False)
 
 
-        #############################
-        #dimensionality reduction
 
+def plotgroupneuralmodelcorrs(modelcorrs, sems, robj, models, colors, ylim):
+    ax=simplebar(modelcorrs, yerr=sems, title='%s-- %s of group data' % (robj.roi, robj.corrtype), xlabel='models',
+            xticklabels=models, ylabel='%s\nSEM from bootstrap test' % (robj.corrtype), colors=colors, ylim=ylim, show=False)
+    sns.despine(ax=ax, top=True, right=True, left=False, bottom=False, trim=False)
+    plt.show()
+    return ax
 
+def plotindneuralmodelocrrs(modelcorrs, sems, robj, errtype, models, colors, ylim, noiseceiling, benchmark=None):
+    if errtype == 'ws':
+        eblabel = '+/- 1 SEM (within subjects)'
+    else:
+        eblabel = '+/- 1 SEM (between subjects)'
+    ax = simplebar(modelcorrs, yerr=sems, title='%s-- avg %s of ind data' % (robj.roi, robj.corrtype), xlabel='models',
+                 xticklabels=models, ylabel='%s\n%s' % (robj.corrtype, eblabel), colors=colors, ylim=ylim, show=False)
+    if noiseceiling:
+        ax.axhspan(noiseceiling[0] - .01, noiseceiling[1], facecolor='#8888AA', alpha=0.15)
+    if benchmark:
+        ax.plot(ax.get_xlim(), [benchmark, benchmark], linestyle='--', alpha=.4)
+    sns.despine(ax=ax, top=True, right=True, left=False, bottom=False, trim=False)
+    plt.show()
+    return ax
+
+def plottcresults(tcobjs, roilist):
+    import seaborn as sns
+    for roi in tcobjs.keys():
+        if roi in roilist:
+            tcobj=tcobjs[roi]
+            colors=sns.color_palette('PuBuGn',len(tcobj.models))
+            allmodelcolors=cfg.vizcfg.modelcolors
+            tcobj.colordict={model:'#BBBBBB' for modeln,model in enumerate(tcobj.models)}
+            for key in allmodelcolors.keys():
+                if key in cfg.vizcfg.modelkeys:
+                    tcobj.colordict[key]=allmodelcolors[key]
+            f,ax=plt.subplots()
+            for model in tcobj.models:
+                if model in cfg.vizcfg.modelkeys:
+                    tcobj.plottimecourse(model, ax=ax, plotnc=False, ylim=[-.06,.1])
+
+#############################
+#dimensionality reduction
 #############################
 
 def plot3d(matrix, indices=[0, 1, 2], colors=['b'], dimname='dimension', figsize=[4, 3]):
@@ -345,7 +508,7 @@ def plotscree(ca, ax=0):
 def plotcomponentcorrs(obsscores, ax=None, label=''):
     #sns.corrplot(pd.DataFrame(obsscores), method='pearson', annot=False, ax=ax)
     correlations = pd.DataFrame(obsscores).corr(method='pearson').values
-    print plotmatrix(correlations)
+    plotmatrix(correlations)
     corrs = correlations[np.tril_indices(len(correlations), 1)]
     plotmatrix(np.tril(correlations, -1), colorbar=False, figsize=[3, 2], ax=ax, xlabel=label)
     plt.title('correlation of components in raw input space\n mean corr= %.6f' % (np.mean(corrs)))
