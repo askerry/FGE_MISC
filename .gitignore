@@ -27,6 +27,7 @@
 *.sbn
 *.prj
 *.dbf
+*.pkl
  
 # OS generated files #
 ######################
