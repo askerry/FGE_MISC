@@ -9,6 +9,7 @@ import os
 from sklearn import svm, cluster
 from sklearn.cross_decomposition import PLSRegression
 from sklearn.cluster import AffinityPropagation
+from sklearn.decomposition import PCA, FastICA
 
 
 class DataFiles():
@@ -61,11 +62,18 @@ class ModelConfig():
                                  preference=None)
         return ap
 
+    def PCA(self):
+        pca=PCA()
+        return pca
+
+    def ICA(self):
+        ica=FastICA()
+        return ica
+
     def printmodelparams(self):
         print "not implemented yet"
 
-#set up config info to import into analysis        
-
+#set up config info to import into analysis
 mcfg = ModelConfig()
 
 #rootdir = '/Users/amyskerry/dropbox/FGE_MISC/'

@@ -6,6 +6,7 @@ Created on Wed Sep  3 15:16:04 2014
 """
 import os
 import sys
+
 sys.path.append('/mindhive/saxelab/scripts/aesscripts/')
 import pandas as pd
 import numpy as np
@@ -16,7 +17,6 @@ import pickle
 import warnings
 from copy import deepcopy
 import scipy.stats
-from sklearn.decomposition import PCA, FastICA
 import collections
 import FGE_MISC.code.vizfuncs as viz
 
@@ -206,7 +206,6 @@ def countitems(df, visualize=True):
 ###########################################################################################    
 #dimensionality reduction
 ###########################################################################################    
-
 def affinitypropcluster(datamatrix, true_labels, axislabels, dim1=0, dim2=1):
     '''takes a dataset and returns and plots set of clusters using affinity propogation (advantage: don't have to speciy K)'''
     apm = mcfg.affinityprop()
@@ -238,8 +237,8 @@ def affinitypropcluster(datamatrix, true_labels, axislabels, dim1=0, dim2=1):
             plt.plot([cluster_center[dim1], x[dim1]], [cluster_center[dim2], x[dim2]], color=color)
     plt.xlabel(axislabels[dim1])
     plt.ylabel(axislabels[dim2])
-    plt.title('Estimated number of dimension clusters: %d. \nPlotted in space of emotions %s and %s.' % (
-    n_clusters, axislabels[dim1], axislabels[dim2]))
+    plt.title('Estimated number of dimension clusters: %d. \nPlotted in space of axislabels %s and %s.' % (
+        n_clusters, axislabels[dim1], axislabels[dim2]))
     plt.show()
     return af, cluster2realmapping
 
@@ -257,7 +256,7 @@ def optimalKclusters1(matrix):
         optimalK = belowZero.index(True)
     except:
         optimalK = WSSdiffs.index(min(WSSdiffs)) - 1
-    # plot elbow curve
+        # plot elbow curve
     f, ax = plt.subplots()
     ax.plot(K, avgWithinSS, 'b*-')
     ax.plot(K[optimalK], avgWithinSS[optimalK], marker='o', markersize=12,
@@ -307,12 +306,12 @@ def reduction(matrix, ncomp=None, reductiontype='PCA'):
     #set up figure
     f, ax = plt.subplots(1, 3, figsize=[10, 3])
     if reductiontype == 'PCA':
-        ca = PCA()
+        ca = mcfg.PCA()
     elif reductiontype == 'ICA':
-        ca = FastICA()
+        ca = mcfg.ICA()
     if ncomp:
         ca.n_components = ncomp
-    #do basic reduction
+        #do basic reduction
     obsscores = ca.fit_transform(matrix)  #scores of our observations on the 3 components
     dimloadings = ca.components_  #loadings of initial data dimensions onto these components (eigenvectors)
     recoveredinput = ca.inverse_transform(
@@ -322,19 +321,22 @@ def reduction(matrix, ncomp=None, reductiontype='PCA'):
         viz.plotmatrix(dimloadings, xlabel='initial dimensions', ylabel='components', ax=ax[1], title='dim loadings')
     else:  #if we are fitting an initial model to evaluate dimensions
         viz.plotmatrix(matrix, xlabel='initial dimensions', ylabel='initial observations', ax=ax[0],
-                       title='initial input')
+                   title='initial input')
         if reductiontype == 'PCA':
             viz.plotscree(ca, ax=ax[1])
     viz.plotmatrix(recoveredinput, xlabel='initial dimensions', ylabel='transformed observations', ax=ax[2],
-                   title='recovered input (all components)')
+               title='recovered input (all components)')
     plt.tight_layout()
     print "reduced to %s dimensions" % (len(ca.components_))
     if reductiontype == 'PCA':
         print "explaining %.3f%% of variance" % (100 * np.sum(ca.explained_variance_ratio_))
-    return obsscores, dimloadings, recoveredinput
+        varexplained = ca.explained_variance_ratio_
+    else:
+        varexplained = None
+    return obsscores, dimloadings, recoveredinput, varexplained
 
 
-###########################################################################################    
+###########################################################################################
 #modeling
 ###########################################################################################    
 
@@ -475,7 +477,7 @@ def classificationwrapper(modeldata, allresults, chosenmodel, labelcol, features
     '''cleaning up the notebook with a dummy wrapper'''
     result = ClassificationResult(chosenmodel, labelcol, features, gencol, iterations, orderedlabels)
     print "classifying %s with generalization across %s: %s iterations of randomized split-half train/test" % (
-    chosenmodel, gencol, iterations)
+        chosenmodel, gencol, iterations)
     result.confmat, result.meanacc, result.labelaccs, result.exemplaraccs = iterativeclassification(modeldata, labelcol,
                                                                                                     features, folds,
                                                                                                     orderedlabels,
@@ -593,12 +595,13 @@ def transformedm(dm):
 #specialized similarity matrix functions    
 def makeNDEconfmat(conf, labelorder):
     conf = conf.ix[labelorder, labelorder]
-    return {'simmat_across': -1*np.array(conf.values), 'simmat': None, 'labels': conf.columns}
+    return {'simmat_across': -1 * np.array(conf.values), 'simmat': None, 'labels': conf.columns}
+
 
 def makeconfRDM(flag, chosenmodel, confmatsaves):
-    cfdict=confmatsaves['%s_confs_%s' %(chosenmodel,flag)]
-    matrix=-1*np.array(cfdict['simmat_across'])
-    return {'simmat_across':list(matrix), 'labels':cfdict['labels']}
+    cfdict = confmatsaves['%s_confs_%s' % (chosenmodel, flag)]
+    matrix = -1 * np.array(cfdict['simmat_across'])
+    return {'simmat_across': list(matrix), 'labels': cfdict['labels']}
 
 
 def makecosineconfmat(cosinedict, labelorder, item2emomapping, iterations=2, similarity='euclidean'):
@@ -623,6 +626,6 @@ def makecosineconfmat(cosinedict, labelorder, item2emomapping, iterations=2, sim
         emodf = emodf.groupby(emodf.index).mean()
         matrices.append(emodf.values)
     simmat_untransformed = np.mean(matrices, axis=0)
-    simmat = transformsimilarities(-1*simmat_untransformed, similarity)
+    simmat = transformsimilarities(-1 * simmat_untransformed, similarity)
     return {'simmat': None, 'simmat_across': simmat, 'labels': labelorder}
     

@@ -10,7 +10,7 @@ import numpy as np
 import scipy.stats
 import pandas as pd
 from matplotlib.patches import FancyArrowPatch
-from mpl_toolkits.mplot3d import proj3d
+from mpl_toolkits.mplot3d import proj3d, Axes3D
 import collections
 import seaborn as sns
 import warnings
@@ -23,6 +23,7 @@ try:
     sns.set_context('notebook')
 except:
     sns.set_axes_style("white", "notebook")
+
 
 def nonnancorr(array1, array2):
     if np.isnan(np.sum(array1)) or np.isnan(np.sum(array2)):
@@ -110,7 +111,8 @@ def heatmapdf(df, xlabel=None, ylabel=None, title=None, xticklabels=None, ytickl
 #NDIM
 #############################
 
-def plotbar(array, yerr=None, xlabel='', ylabel='', title='', xticklabels=None, ax=None, fmt=None, figsize=[4, 3], ylim=None, colors=None):
+def plotbar(array, yerr=None, xlabel='', ylabel='', title='', xticklabels=None, ax=None, fmt=None, figsize=[4, 3],
+            ylim=None, colors=None):
     if not ax:
         f, ax = plt.subplots(figsize=figsize)
     if yerr:
@@ -126,6 +128,7 @@ def plotbar(array, yerr=None, xlabel='', ylabel='', title='', xticklabels=None, 
     if ylim:
         ax.set_ylim(ylim)
     return ax
+
 
 def simplebar(values, width=.9, bars=True, elinewidth=2, markersize=None, fmt=None, xtickrotation=None, figsize=[4, 4],
               yerr=None, xlabel=None, xlim=None, xticklabels=None, ylabel=None, yticklabels=None, title=None, ylim=None,
@@ -196,8 +199,6 @@ def simplebar(values, width=.9, bars=True, elinewidth=2, markersize=None, fmt=No
     if show:
         plt.show()
     return ax
-
-
 
 
 def plotmatrix(matrix, xlabel='', ylabel='', ax=None, title='', colorbar=False, figsize=[4, 3], xticklabels=[],
@@ -367,7 +368,6 @@ def plotacccomparison(resultsdict, keys=[], flags=[], benchmark=None, chance=Non
         sns.despine(ax=axis, top=True, right=True, left=False, bottom=False, trim=False)
 
 
-
 def plotcorrelationcomparison(resultsdict, orderedlabels, keys=[], flags=[], figsize=[12, 3], unit='items',
                               comparisons=None, modelcolors=[]):
     '''plot item-wise correlation for each model'''
@@ -424,13 +424,14 @@ def plotcorrelationcomparison(resultsdict, orderedlabels, keys=[], flags=[], fig
         sns.despine(ax=axis, top=True, right=True, left=False, bottom=False, trim=False)
 
 
-
 def plotgroupneuralmodelcorrs(modelcorrs, sems, robj, models, colors, ylim):
-    ax=simplebar(modelcorrs, yerr=sems, title='%s-- %s of group data' % (robj.roi, robj.corrtype), xlabel='models',
-            xticklabels=models, ylabel='%s\nSEM from bootstrap test' % (robj.corrtype), colors=colors, ylim=ylim, show=False)
+    ax = simplebar(modelcorrs, yerr=sems, title='%s-- %s of group data' % (robj.roi, robj.corrtype), xlabel='models',
+                   xticklabels=models, ylabel='%s\nSEM from bootstrap test' % (robj.corrtype), colors=colors, ylim=ylim,
+                   show=False)
     sns.despine(ax=ax, top=True, right=True, left=False, bottom=False, trim=False)
     plt.show()
     return ax
+
 
 def plotindneuralmodelocrrs(modelcorrs, sems, robj, errtype, models, colors, ylim, noiseceiling, benchmark=None):
     if errtype == 'ws':
@@ -438,7 +439,7 @@ def plotindneuralmodelocrrs(modelcorrs, sems, robj, errtype, models, colors, yli
     else:
         eblabel = '+/- 1 SEM (between subjects)'
     ax = simplebar(modelcorrs, yerr=sems, title='%s-- avg %s of ind data' % (robj.roi, robj.corrtype), xlabel='models',
-                 xticklabels=models, ylabel='%s\n%s' % (robj.corrtype, eblabel), colors=colors, ylim=ylim, show=False)
+                   xticklabels=models, ylabel='%s\n%s' % (robj.corrtype, eblabel), colors=colors, ylim=ylim, show=False)
     if noiseceiling:
         ax.axhspan(noiseceiling[0] - .01, noiseceiling[1], facecolor='#8888AA', alpha=0.15)
     if benchmark:
@@ -447,37 +448,57 @@ def plotindneuralmodelocrrs(modelcorrs, sems, robj, errtype, models, colors, yli
     plt.show()
     return ax
 
+
 def plottcresults(tcobjs, roilist):
     import seaborn as sns
+
     for roi in tcobjs.keys():
         if roi in roilist:
-            tcobj=tcobjs[roi]
-            colors=sns.color_palette('PuBuGn',len(tcobj.models))
-            allmodelcolors=cfg.vizcfg.modelcolors
-            tcobj.colordict={model:'#BBBBBB' for modeln,model in enumerate(tcobj.models)}
+            tcobj = tcobjs[roi]
+            colors = sns.color_palette('PuBuGn', len(tcobj.models))
+            allmodelcolors = cfg.vizcfg.modelcolors
+            tcobj.colordict = {model: '#BBBBBB' for modeln, model in enumerate(tcobj.models)}
             for key in allmodelcolors.keys():
                 if key in cfg.vizcfg.modelkeys:
-                    tcobj.colordict[key]=allmodelcolors[key]
-            f,ax=plt.subplots()
+                    tcobj.colordict[key] = allmodelcolors[key]
+            f, ax = plt.subplots()
             for model in tcobj.models:
                 if model in cfg.vizcfg.modelkeys:
-                    tcobj.plottimecourse(model, ax=ax, plotnc=False, ylim=[-.06,.1])
+                    tcobj.plottimecourse(model, ax=ax, plotnc=False, ylim=[-.06, .1])
 
 #############################
 #dimensionality reduction
 #############################
 
-def plot3d(matrix, indices=[0, 1, 2], colors=['b'], dimname='dimension', figsize=[4, 3]):
-    from mpl_toolkits.mplot3d import Axes3D
+def plotscree(ca, ax=0):
+    if ax == 0:
+        f, ax = plt.subplots()
+    else:
+        ax.plot(ca.explained_variance_ratio_)
+        ax.set_title('scree plot')
+        ax.set_ylabel('variance explained')
+        ax.set_xlabel('eigenvector')
 
+
+def plot3d(matrix, colors=['b'], dimname='dimension', figsize=[4, 3]):
     fig = plt.figure(figsize=figsize)
-    ax = Axes3D(fig)
-    ax.scatter(matrix[:, indices[0]], matrix[:, indices[1]], matrix[:, indices[2]], c=colors, cmap=plt.cm.spectral)
+    ax = Axes3D(fig, elev=-150, azim=110)
+    ax.scatter(matrix[:, 0], matrix[:, 1], matrix[:, 2], c=colors, cmap=plt.cm.spectral)
     if type(dimname) == str:
         dimname = [dimname for el in range(3)]
-    ax.set_xlabel('%s #%s' % (dimname[0], indices[0]))
-    ax.set_ylabel('%s #%s' % (dimname[1], indices[1]))
-    ax.set_zlabel('%s #%s' % (dimname[2], indices[2]))
+    ax.set_xlabel('%s #%s' % (dimname[0], 0))
+    ax.set_ylabel('%s #%s' % (dimname[1], 1))
+    ax.set_zlabel('%s #%s' % (dimname[2], 2))
+    return ax
+
+
+def plot2d(matrix, colors=['b'], dimname='dimension', figsize=[4, 3]):
+    fig, ax = plt.subplots(figsize=figsize)
+    ax.scatter(matrix[:, 0], matrix[:, 1], c=colors, cmap=plt.cm.spectral)
+    if type(dimname) == str:
+        dimname = [dimname for el in range(2)]
+    ax.set_xlabel('%s #%s' % (dimname[0], 0))
+    ax.set_ylabel('%s #%s' % (dimname[1], 1))
     return ax
 
 
@@ -495,54 +516,102 @@ class Arrow3D(FancyArrowPatch):
             FancyArrowPatch.draw(self, renderer)
 
 
-def plotscree(ca, ax=0):
-    if ax == 0:
-        f, ax = plt.subplots()
-    else:
-        ax.plot(ca.explained_variance_ratio_)
-        ax.set_title('scree plot')
-        ax.set_ylabel('variance explained')
-        ax.set_xlabel('eigenvector')
-
-
 def plotcomponentcorrs(obsscores, ax=None, label=''):
     #sns.corrplot(pd.DataFrame(obsscores), method='pearson', annot=False, ax=ax)
     correlations = pd.DataFrame(obsscores).corr(method='pearson').values
-    plotmatrix(correlations)
+    #plotmatrix(correlations)
     corrs = correlations[np.tril_indices(len(correlations), 1)]
-    plotmatrix(np.tril(correlations, -1), colorbar=False, figsize=[3, 2], ax=ax, xlabel=label)
-    plt.title('correlation of components in raw input space\n mean corr= %.6f' % (np.mean(corrs)))
+    plotmatrix(np.tril(correlations, -1), colorbar=False, ax=ax, xlabel=label)
+    ax.set_title('correlation of components in raw observation space\n mean corr= %.6f' % (np.mean(corrs)))
     plt.tight_layout()
 
 
-def plotcomponentsininputspace(matrix, axislabels, item2emomapping, dimloadings, dimindices=[0, 1, 2], dimlabels=[],
-                               componentindices=[0], title=None):  #plot observations on 3 components
-    #plot observations on 3 components
-    axisdims = list(set(item2emomapping.values()))
-    colornums = sns.color_palette('husl', len(axisdims))
-    labelcolors = {el: colornums[eln] for eln, el in enumerate(axisdims)}
-    colors = [labelcolors[item2emomapping[el]] for el in axislabels]
+def plotcompsininputspace(matrix, axislabels, dimloadings, varexplained, mapping=None, dimindices=[0, 1, 2],
+                          dimlabels=[],
+                          componentindices=[0, 1, 2], title=None, constant=None):  #plot observations on 3 components
+    #plot 3 components in input dimension space
+    data = matrix[:, dimindices]
+    components = dimloadings.T[:, dimindices]
+    if mapping:
+        axisdims = list(set(mapping.values()))
+        colornums = sns.color_palette('husl', len(axisdims))
+        labelcolors = {el: colornums[eln] for eln, el in enumerate(axisdims)}
+        colors = [labelcolors[mapping[el]] for el in axislabels]
+    else:
+        colors = 'b'
     if len(dimlabels) > 0:
         dimname = [dimlabels[el] for el in dimindices]
     else:
         dimname = 'input dim'
-    ax = plot3d(matrix, indices=dimindices, colors=colors, dimname=dimname)
-    meanx, meany, meanz = np.mean(matrix[:, dimindices[0]]), np.mean(matrix[:, dimindices[1]]), np.mean(
-        matrix[:, dimindices[2]])
+    if len(dimindices) == 3:
+        ax = plot3d(data, colors=colors, dimname=dimname)
+    else:
+        ax = plot2d(data, colors=colors, dimname=dimname)
+    ar = [np.max(data, axis=0)[index] - np.min(data, axis=0)[index] for index in range(len(dimindices))]
+    datamean = np.mean(data, axis=0)
     for x in componentindices:
-        comp = dimloadings[x]
-        cx, cy, cz = comp[dimindices[0]], comp[dimindices[1]], comp[dimindices[2]]
-        ax.plot([meanx], [meany], [meanz], '.', markersize=5, color='b')
-        print cx, cy, cz
-        a = Arrow3D([meanx, cx], [meany, cy], [meanz, cz], mutation_scale=10, lw=.5, arrowstyle="-|>")
-        ax.add_artist(a)
+        drawvector(components, x, datamean, ax, ar, constant)
     plt.show()
 
 
-def plotinputincomponentspace(obsscores, axislabels, item2emomapping, componentindices=[1, 2, 3], title=None):
+def drawvector(eigenvectors, index, datamean, ax, ar, constant):
+    eigenvector = eigenvectors[index]
+    if not constant:
+        constant = 5
+    scaler = constant / np.mean(ar)
+    x = (datamean[0], (eigenvector[0] * scaler + datamean[0]))
+    y = (datamean[1], (eigenvector[1] * scaler + datamean[1]))
+    if len(datamean) == 2:
+        ax.text(x[1], y[1], index, bbox=dict(boxstyle="round", fc="w"))
+        arrow = ax.annotate('', xy=[x[1], y[1]], xycoords='data', xytext=[x[0], y[0]], textcoords='data',
+                            arrowprops=dict(facecolor='red', width=1))
+    else:
+        z = (datamean[2], eigenvector[2] * scaler + datamean[2])
+        a = Arrow3D(x, y, z, mutation_scale=10, lw=1, arrowstyle="-|>", color="r")
+        ax.add_artist(a)
+
+
+def plotinputincomponentspace(obsscores, axislabels, mapping=None, componentindices=[0, 1, 2], title=None):
     #plot observations on 3 components
-    axisdims = list(set(item2emomapping.values()))
-    colornums = sns.color_palette('husl', len(axisdims))
-    labelcolors = {el: colornums[eln] for eln, el in enumerate(axisdims)}
-    colors = [labelcolors[item2emomapping[el]] for el in axislabels]
-    plot3d(obsscores, indices=componentindices, colors=colors, dimname='component')
+    componentindices = componentindices[:len(obsscores[0])]
+    data = obsscores[:, componentindices]
+    if mapping:
+        axisdims = list(set(mapping.values()))
+        colornums = sns.color_palette('husl', len(axisdims))
+        labelcolors = {el: colornums[eln] for eln, el in enumerate(axisdims)}
+        colors = [labelcolors[mapping[el]] for el in axislabels]
+    else:
+        colors = 'b'
+    if len(obsscores[0]) == 3:
+        ax = plot3d(data, colors=colors, dimname='component')
+    else:
+        ax = plot2d(data, colors=colors, dimname='component')
+    if mapping:
+        for label, name in mapping.items():
+            if len(obsscores[0]) == 3:
+                ax.text3D(obsscores[axislabels == label, 0].mean(),
+                          obsscores[axislabels == label, 1].mean(),
+                          obsscores[axislabels == label, 2].mean(), name,
+                          bbox=dict(alpha=.5, edgecolor='w', facecolor='w'))
+            else:
+                ax.text(obsscores[axislabels == label, 0].mean(),
+                        obsscores[axislabels == label, 1].mean(), name,
+                        bbox=dict(alpha=.5, edgecolor='w', facecolor='w'))
+
+
+def plotdimensionsincomponentspace(dimloadings, dimlabels, mapping=None, componentindices=[0, 1, 2], title=None):
+    #plot dimensions on 3 components
+    dimloadings = dimloadings.T
+    componentindices = componentindices[:len(dimloadings[0])]
+    data = dimloadings[:, componentindices]
+    if len(componentindices) == 3:
+        ax = plot3d(data, dimname='component')
+    else:
+        ax = plot2d(data, dimname='component')
+    for labeln, label in enumerate(dimlabels):
+        if len(componentindices) == 3:
+            ax.text3D(dimloadings[labeln][0], dimloadings[labeln][1], dimloadings[labeln][2], label,
+                      bbox=dict(alpha=.5, edgecolor='w', facecolor='w'))
+        else:
+            ax.text(dimloadings[labeln][0], dimloadings[labeln][1], label,
+                    bbox=dict(alpha=.5, edgecolor='w', facecolor='w'))
