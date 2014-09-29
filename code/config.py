@@ -10,6 +10,7 @@ from sklearn import svm, cluster
 from sklearn.cross_decomposition import PLSRegression
 from sklearn.cluster import AffinityPropagation
 from sklearn.decomposition import PCA, FastICA
+import numpy as np
 
 
 class DataFiles():
@@ -114,11 +115,25 @@ cfg.ndimchecks = {'main_character': [7, 5]}  #avgthresh, indthresh
 cfg.asdchecks = {'main_character': [0, 0]}  #avgthresh, indthresh (different exclusion criteria)
 cfg.ndevisualize = False
 cfg.ndimvisualize = True
+cfg.valencedict={'pos':['Grateful', 'Joyful', 'Hopeful', 'Excited', 'Proud', 'Impressed', 'Content', 'Nostalgic'], 'neg':['Lonely', 'Furious', 'Terrified', 'Apprehensive', 'Annoyed', 'Guilty', 'Disgusted',
+                      'Embarrassed', 'Devastated', 'Disappointed', 'Jealous']}
+
+#####viz
+def hex_to_rgb(value):
+    value = value.lstrip('#')
+    lv = len(value)
+    return tuple(float(int(value[i:i + lv // 3], 16))/255 for i in range(0, lv, lv // 3))
+def offset(rgb, offset):
+    return tuple([el*offset for el in rgb])
 
 vizcfg = Config()
 
-vizcfg.colordict = {'benchmark': '#3344AA', 'dimmodels': '#5577CC', 'control': '#228855', 'textsentiment': '#00C444',
+vizcfg.basecolor='#4c72b0'
+vizcfg.cmap='Greys'
+
+colordict = {'benchmark': '#3344AA', 'dimmodels': '#5577CC', 'control': '#228855', 'textsentiment': '#00FF44',
                     'other': '#BBCCCC'}
+vizcfg.colordict={item[0]:hex_to_rgb(item[1]) for item in colordict.items()}
 vizcfg.vizmodels = ['NDEconfmat_raw',
                     'NDEconfmat_rdm',
                     'NDEconfmat_confs_item',
@@ -135,26 +150,28 @@ vizcfg.vizmodels = ['NDEconfmat_raw',
                     'valencearousal_rdm',
                     'valencearousal_confs_item',
                     'valencearousal_confs_None',
-                    'arousal_rdm',
-                    'arousal_confs_item',
-                    'arousal_confs_None',
                     'valence_rdm',
                     'valence_confs_item',
                     'valence_confs_None',
-                    'naivebayes_rdm',
-                    'naivebayes_confs_item',
-                    'naivebayes_confs_None',
-                    'dlsentiment_rdm',
-                    'dlsentiment_confs_item',
-                    'dlsentiment_confs_None',
+                    'arousal_rdm',
+                    'arousal_confs_item',
+                    'arousal_confs_None',
+                    'sentimentBoW_rdm',
+                    'sentimentBoW_confs_item',
+                    'sentimentBoW_confs_None',
+                    'sentimentRNTN_rdm',
+                    'sentimentRNTN_confs_item',
+                    'sentimentRNTN_confs_None',
                     'cohmetrix_rdm',
                     'cohmetrix_confs_item',
                     'cohmetrix_confs_None',
-                    'cosinesim_rdm',
+                    'tfidf_rdm',
+                    'tfidf_confs_item',
+                    'tfidf_confs_None',
                     'intensity_rdm',
                     'intensity_confs_item',
                     'intensity_confs_None']
-vizcfg.excludemodels = ['NDEconfmat_rdm', 'explicits_rdm']
+vizcfg.excludemodels = ['NDEconfmat_rdm', 'explicits_rdm']#, 'tfidf_rdm', 'cohmetrix_rdm']
 vizcfg.flags=['rdm']
 vizcfg.modelkeys = [m for m in vizcfg.vizmodels if m not in vizcfg.excludemodels]
 for f in vizcfg.flags:
@@ -165,8 +182,8 @@ vizcfg.allmodeltypes = {'37dim_rdm': 'dimmodels',
                         'cohmetrix_rdm': 'control',
                         '37dim_confs_item': 'dimmodels',
                         '37dim_confs_None': 'dimmodels',
-                        'naivebayes_confs_item': 'textsentiment',
-                        'naivebayes_confs_None': 'textsentiment',
+                        'sentimentBoW_confs_item': 'textsentiment',
+                        'sentimentBoW_confs_None': 'textsentiment',
                         'explicits_confs_item': 'benchmark',
                         'explicits_confs_None': 'benchmark',
                         'basicemo_rdm': 'dimmodels',
@@ -175,26 +192,32 @@ vizcfg.allmodeltypes = {'37dim_rdm': 'dimmodels',
                         'explicits_rdm': 'benchmark',
                         'cohmetrix_confs_item': 'control',
                         'cohmetrix_confs_None': 'control',
-                        'dlsentiment_rdm': 'textsentiment',
+                        'sentimentRNTN_rdm': 'textsentiment',
                         'valence_confs_item': 'dimmodels',
                         'valence_confs_None': 'dimmodels',
-                        'cosinesim_rdm': 'control',
+                        'tfidf_rdm': 'control',
+                        'tfidf_confs_item': 'control',
+                        'tfidf_confs_None': 'control',
                         'intensity_rdm': 'other',
-                        'naivebayes_rdm': 'textsentiment',
+                        'sentimentBoW_rdm': 'textsentiment',
                         'NDEconfmat_rdm': 'benchmark',
                         'NDEconfmat_raw': 'benchmark',
                         'NDEconfmat_confs_None': 'benchmark',
                         'NDEconfmat_confs_item': 'benchmark',
                         'arousal_confs_item': 'dimmodels',
                         'intensity_confs_item': 'other',
-                        'dlsentiment_confs_item': 'textsentiment',
+                        'sentimentRNTN_confs_item': 'textsentiment',
                         'valencearousal_confs_item': 'dimmodels',
                         'arousal_confs_None': 'dimmodels',
                         'intensity_confs_None': 'other',
-                        'dlsentiment_confs_None': 'textsentiment',
+                        'sentimentRNTN_confs_None': 'textsentiment',
                         'valencearousal_confs_None': 'dimmodels',
                         'valencearousal_rdm': 'dimmodels'}
 vizcfg.modelcolors = {key: vizcfg.colordict[vizcfg.allmodeltypes[key]] for key in vizcfg.allmodeltypes.keys()}
+offsets=list(np.arange(.5,1,.05))
+np.random.shuffle(offsets)
+for key in vizcfg.modelkeys:
+    vizcfg.modelcolors[key] = offset(vizcfg.colordict[vizcfg.allmodeltypes[key]], offsets.pop())
 
 cohmetrixcfg = Config()
 cohmetrixcfg.excludecols = ['qnum_str', 'cond', 'stimname', 'text', 'qnum',
@@ -204,9 +227,10 @@ cohmetrixcfg.excludecols = ['qnum_str', 'cond', 'stimname', 'text', 'qnum',
 
 cohmetrixcfg.cols = ["RDFRE 'Flesch Reading Ease'",
                      "PCREFz 'Text Easability PC Referential cohesion, z score'",
+                     "DESWC 'Word count, number of words'",
                      #"SMCAUSv 'Causal verb incidence'",
                      # "SMCAUSr 'Ratio of casual particles to causal verbs'",
-                     #"PCCNCz 'Text Easability PC Word concreteness, z score'",
+                     "PCCNCz 'Text Easability PC Word concreteness, z score'",
                      "DRNEG 'Negation density, incidence'",
                      "SYNNP 'Number of modifiers per noun phrase, mean'",
                      "SYNLE 'Left embeddedness, words before main verb, mean'"]

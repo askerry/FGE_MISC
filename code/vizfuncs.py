@@ -13,8 +13,11 @@ from matplotlib.patches import FancyArrowPatch
 from mpl_toolkits.mplot3d import proj3d, Axes3D
 import collections
 import seaborn as sns
+import math
 import warnings
 import FGE_MISC.code.config as cfg
+import plotly.plotly
+import os
 
 # #general
 
@@ -23,6 +26,13 @@ try:
     sns.set_context('notebook')
 except:
     sns.set_axes_style("white", "notebook")
+
+def savefigure(f, fname, figdir, figsave='local', plotlyprivate=False):
+    if figsave=='local':
+        f.savefig(os.path.join(figdir, fname+'.png'), bbox_inches='tight', dpi=400)
+    elif figsave=='plotly':
+        plotly.sign_in('askerry', 'tn0zp19ph1')
+        plotly.plot_mpl(f, filename=fname, auto_open=False, world_readable=plotlyprivate)
 
 
 def nonnancorr(array1, array2):
@@ -35,16 +45,6 @@ def nonnancorr(array1, array2):
         array1, array2 = zip(*arrays)
     r, p = scipy.stats.pearsonr(array1, array2)
     return r, p, len(array1)
-
-
-def similarity(array1, array2, simtype='pearsonr'):
-    '''compute similarity between 2 arrays'''
-    if simtype == 'pearsonr':
-        corr, p = scipy.stats.pearsonr(array1, array2)
-    if simtype == 'spearmanr':
-        corr, p = scipy.stats.spearmanr(array1, array2)
-    return corr, p
-
 
 def tickify(ticklabels):
     for v in cfg.tickcfg.values():
@@ -74,28 +74,28 @@ def plotaccuracy(NDE_output):
 
 
 def plotcollapsedresults(NDE_output, orderedemos):
-    f, ax = plt.subplots(1, 3, figsize=[18, 4])
-    heatmapdf(NDE_output['craw'], xlabel='guessed emotion', ylabel='item', title='raw confusions',
+    f, ax = plt.subplots(1, 3, figsize=[18, 5])
+    heatmapdf(NDE_output['craw'], xlabel='guessed emotion', ylabel='intended emotion', title='raw confusions',
               xticklabels=orderedemos, yticklabels=orderedemos, ax=ax[0])
-    heatmapdf(NDE_output['cprop'], xlabel='guessed emotion', ylabel='item', title='proportions',
+    heatmapdf(NDE_output['cprop'], xlabel='guessed emotion', ylabel='intended emotion', title='proportions',
               xticklabels=orderedemos, yticklabels=orderedemos, ax=ax[1])
     ax[2].clear()
     NDE_output['csummary']['accuracy'].plot(kind='bar', yerr=NDE_output['csummary']['SEM'], ax=ax[2])
     ax[2].set_ylabel('accuracy(+/- SEM across items)')
 
 
-def heatmapdf(df, xlabel=None, ylabel=None, title=None, xticklabels=None, yticklabels=None, ax=None):
+def heatmapdf(df, xlabel=None, ylabel=None, title=None, xticklabels=None, yticklabels=None, ax=None, cmap=cfg.vizcfg.cmap):
     if ax:
         pass
     else:
         f, ax = plt.subplots()
-    ax.pcolor(df)
+    ax.pcolor(df, cmap=cmap)
     if xticklabels:
         ax.set_xticks(np.arange(len(df.columns)) + .5)
         ax.set_xticklabels(df.columns, rotation=90)
         ax.set_xlim([0, len(df.columns)])
     if yticklabels:
-        ax.set_yticks(np.arange(len(df.index)))
+        ax.set_yticks(np.arange(len(df.index))+.5)
         ax.set_yticklabels(df.index)
         ax.set_ylim([0, len(df.index)])
     if xlabel:
@@ -104,7 +104,7 @@ def heatmapdf(df, xlabel=None, ylabel=None, title=None, xticklabels=None, ytickl
         ax.set_ylabel(ylabel)
     if title:
         ax.set_title(title)
-    plt.colorbar(plt.pcolor(df), ax=ax)
+    plt.colorbar(plt.pcolor(df, cmap=cmap), ax=ax)
 
 
 #############################   
@@ -112,13 +112,12 @@ def heatmapdf(df, xlabel=None, ylabel=None, title=None, xticklabels=None, ytickl
 #############################
 
 def plotbar(array, yerr=None, xlabel='', ylabel='', title='', xticklabels=None, ax=None, fmt=None, figsize=[4, 3],
-            ylim=None, colors=None):
+            ylim=None, colors=None, despine=False):
     if not ax:
         f, ax = plt.subplots(figsize=figsize)
+    ax.bar(range(len(array)), array, color=colors)
     if yerr:
-        ax.errorbar(range(len(array)), array, yerr=yerr, color=colors, fmt=fmt)
-    else:
-        ax.bar(range(len(array)), array, color=colors)
+        ax.errorbar(np.arange(len(array))+.5, array, yerr=yerr, color=colors, fmt=fmt)
     if xticklabels:
         ax.set_xticks(np.arange(len(xticklabels)) + .5)
         ax.set_xticklabels(xticklabels, rotation=90)
@@ -127,6 +126,8 @@ def plotbar(array, yerr=None, xlabel='', ylabel='', title='', xticklabels=None, 
     ax.set_xlabel(xlabel)
     if ylim:
         ax.set_ylim(ylim)
+    if despine:
+        sns.despine(ax=ax)
     return ax
 
 
@@ -202,14 +203,14 @@ def simplebar(values, width=.9, bars=True, elinewidth=2, markersize=None, fmt=No
 
 
 def plotmatrix(matrix, xlabel='', ylabel='', ax=None, title='', colorbar=False, figsize=[4, 3], xticklabels=[],
-               yticklabels=[]):
+               yticklabels=[], cmap='hot'):
     matrix = np.array(matrix)
     if not ax:
         f, ax = plt.subplots(figsize=figsize)
     ax.set_ylim(0, len(matrix))
     ax.set_xlim(0, len(matrix[0]))
     ax.set_title(title)
-    im = ax.pcolor(matrix)
+    im = ax.pcolor(matrix, cmap=cmap)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     if len(xticklabels) > 0:
@@ -219,26 +220,10 @@ def plotmatrix(matrix, xlabel='', ylabel='', ax=None, title='', colorbar=False, 
         ax.set_yticks(range(len(yticklabels)))
         ax.set_yticklabels(yticklabels)
     if colorbar:
-        plt.colorbar(im)
+        plt.colorbar(im, cmap=cmap)
         #plt.colorbar(im, cax=ax)
 
-
-def compareconfmats(confvalues, labelorder, comparisons, plot=False, ax=None):
-    '''compare raw behavioral confusion matrix from NDE with with confusion matrix from a model-based classification'''
-    compconf = comparisons['cprop']
-    compconf = compconf.ix[labelorder, labelorder]
-    comparray, confarray = compconf.values.flatten(), confvalues.flatten()
-    if any([any(compconf.columns != labelorder), any(compconf.index != labelorder)]):
-        warnings.warn('label values are not aligned')
-    corr, p = similarity(confarray, comparray, simtype='spearmanr')
-    if plot:
-        tempdf = pd.DataFrame(data={'behavioral confusions (NDE)': comparray, 'model confusions': confarray})
-        ax.set_title('spearmanr=%.3f, p=%.3f' % (corr, p))
-        sns.regplot(x='behavioral confusions (NDE)', y='model confusions', data=tempdf, ax=ax)
-    return corr, p
-
-
-def visualizeclassification(result, orderedlabels, figsize=[12, 3], comparisons=None):
+def visualizeclassification(result, m2bresult, orderedlabels, figsize=[12, 3], comparisons=None):
     '''plot classification results for a single model'''
     confmat, labelaccs = result.confmat, result.labelaccs
     if comparisons:
@@ -252,23 +237,22 @@ def visualizeclassification(result, orderedlabels, figsize=[12, 3], comparisons=
     if comparisons:
         #compare emoaccs
         axis = ax[2]
-        rawvals = [comparisons['csummary'].accuracy.ix[emo] for emo in orderedlabels]
-        tempdf = pd.DataFrame(data={'raw accuracy': rawvals, 'model accuracy': [el for el in labelaccs]})
-        r, p = scipy.stats.pearsonr(tempdf['raw accuracy'], tempdf['model accuracy'])
-        axis.set_title('pearsonr=%.3f, p=%.3f' % (r, p))
+        r=m2bresult['emowise']
+        r,p,tempdf,simtype=r['corr'], r['p'], r['df'], r['simtype']
+        axis.set_title('%s=%.3f, p=%.3f' % (simtype,r, p))
+        sns.regplot(x='raw accuracy', y='model accuracy', data=tempdf, ax=axis)
+        #itemwise
+        axis = ax[3]
+        r=m2bresult['itemwise']
+        r,p,tempdf, simtype=r['corr'], r['p'], r['df'], r['simtype']
+        axis.set_title('%s=%.3f, p=%.3f' % (simtype, r, p))
         sns.regplot(x='raw accuracy', y='model accuracy', data=tempdf, ax=axis)
         #compare to confusions from NDE
-        axis = ax[3]
-        compareconfmats(confmat, orderedlabels, comparisons, plot=True, ax=axis)
         axis = ax[4]
-        ndeitems, ndeaccs = comparisons['summary']['item'].values, comparisons['summary']['accuracy'].values
-        modelitems, modelaccs = result.exemplaraccs['item'].values, result.exemplaraccs['mean_acc'].values
-        tempdf = pd.DataFrame(index=ndeitems, data={'raw accuracy': ndeaccs})
-        tempdf.ix[modelitems, 'model accuracy'] = modelaccs
-        r, p = scipy.stats.pearsonr(tempdf['raw accuracy'], tempdf['model accuracy'])
-        axis.set_title('pearsonr=%.3f, p=%.3f' % (r, p))
-        sns.regplot(x='raw accuracy', y='model accuracy', data=tempdf, ax=axis)
-
+        r=m2bresult['confmatcomp']
+        r,p,tempdf, simtype=r['corr'], r['p'], r['df'], r['simtype']
+        axis.set_title('%s=%.3f, p=%.3f' % (simtype, r, p))
+        sns.regplot(x='behavioral confusions (NDE)', y='model confusions', data=tempdf, ax=axis)
 
 #rsa stuff
 
@@ -283,6 +267,10 @@ def plotrsadict(rsadict, item2emomapping, title, collapse='emo', order=[], ax=No
         avgs = avgs.loc[order]
     if not ax:
         f, ax = plt.subplots(figsize=[4, 2.5])
+    if len(features)>100:
+        features=features[:100]
+        avgs=avgs.ix[:,:100]
+        warnings.warn('limiting feature space (%s) to 100 features for visualization' %(title))
     if len(features) == 1:
         avgs.plot(kind='barh', legend=False, ax=ax)
     else:
@@ -305,6 +293,35 @@ def visualizeinputs(inputspaces, orderedemos, item2emomapping, ncols=3, collapse
     plt.show()
     return ax
 
+def inputdetailhists(inputspaces, modelname):
+    space=inputspaces[modelname]
+    spacemat=np.array(space['itemavgs'])
+    data={f:spacemat[:,fn] for fn,f in enumerate(space['features'])}
+    sdf=pd.DataFrame(index=space['itemlabels'], data=data)
+    fsize=float(len(sdf.columns))
+    ax=sdf.hist(figsize=[fsize,fsize])
+    for x in ax.flatten():
+        x.set_ylim([0,1000])
+
+def inputdetailplots(inputspaces, modelname, item2emomapping, orderedemos):
+    space=inputspaces[modelname]
+    spacemat=np.array(space['itemavgs'])
+    data={f:spacemat[:,fn] for fn,f in enumerate(space['features'])}
+    sdf=pd.DataFrame(index=space['itemlabels'], data=data)
+    emos=[item2emomapping[item] for item in sdf.index]
+    sdf['emo']=np.array(emos)
+    edf=sdf.groupby('emo').mean()
+    edf=edf.ix[orderedemos,:]
+    rows=int(np.ceil(float(len(edf.columns))/6))
+    height=rows*3
+    f,axes=plt.subplots(rows,6, figsize=[18,height], sharex=True, sharey=True)
+    axes=axes.flatten()
+    for coln,col in enumerate(edf.columns):
+        ax=axes[coln]
+        ax=edf[col].plot(kind='barh', legend=False, ax=ax)
+        ax.set_title(col)
+        ax.set_xlim([0,10])
+    #plt.tight_layout()
 
 def visualizeRDMs(allrsasimspaces, orderedemos, ncols=3, keys=[]):
     print "************REPRESENTATIONAL DISSIMILARITY MATRICES***********"
@@ -349,7 +366,7 @@ def plotacccomparison(resultsdict, keys=[], flags=[], benchmark=None, chance=Non
             xlabel = "generalization across %s" % f
         else:
             xlabel = "no generalization"
-        keys = [k for k in keys if 'cosine' not in k]
+        #keys = [k for k in keys if 'cosine' not in k]
         accs = [resultsdict[k + '_result_' + f].meanacc for k in keys]
         if modelcolors:
             colors = [modelcolors[k + '_confs_' + f] for k in keys]
@@ -368,8 +385,7 @@ def plotacccomparison(resultsdict, keys=[], flags=[], benchmark=None, chance=Non
         sns.despine(ax=axis, top=True, right=True, left=False, bottom=False, trim=False)
 
 
-def plotcorrelationcomparison(resultsdict, orderedlabels, keys=[], flags=[], figsize=[12, 3], unit='items',
-                              comparisons=None, modelcolors=[]):
+def plotcorrelationcomparison(resultsdict, orderedlabels, keys=[], flags=[], figsize=[12, 3], modelcolors=[], errorbars=False):
     '''plot item-wise correlation for each model'''
     if len(keys) == 0:
         allkeys = [k[0:k.index('_')] for k in resultsdict.keys()]
@@ -377,52 +393,55 @@ def plotcorrelationcomparison(resultsdict, orderedlabels, keys=[], flags=[], fig
         allkeys = [k[0:k.index('_')] for k in keys]
     keys = []
     for k in allkeys:
-        if k not in keys and 'cosine' not in k:
+        if k not in keys:# and 'cosine' not in k:
             keys.append(k)
     if len(flags) == 0:
         flags = list(set([k[0:k.index('_')] for k in resultsdict.keys()]))
-    f, ax = plt.subplots(1, len(flags), sharey=True)
-    f.suptitle('model comparisons: item-wise correlations')
-    ax[0].set_ylabel('item-wise accuracy correlation (mean % across iterations)')
-    for fn, f in enumerate(flags):
-        if f:
-            xlabel = "generalization across %s" % f
-        else:
-            xlabel = "no generalization"
-        results = [resultsdict[k + '_result_' + f] for k in keys]
-        if modelcolors:
-            colors = [modelcolors[k + '_confs_' + f] for k in keys]
-        resultsrs, resultsps, resultsns = [], [], []
-        for result in results:
-            confmat, labelaccs = result.confmat, result.labelaccs
-            if unit == 'emos':
-                rawvals = [comparisons['csummary'].accuracy.ix[emo] for emo in orderedlabels]
-                tempdf = pd.DataFrame(data={'raw accuracy': rawvals, 'model accuracy': [el for el in labelaccs]})
-                n = len(ndeitems)
-                r, p, n = nonnancorr(tempdf['raw accuracy'].values, tempdf['model accuracy'].values)
-                resultsrs.append(r);
-                resultsps.append(p);
-                resultsns.append(n)
-            elif unit == 'items':
-                ndeitems, ndeaccs = comparisons['summary']['item'].values, comparisons['summary']['accuracy'].values
-                modelitems, modelaccs = result.exemplaraccs['item'].values, result.exemplaraccs['mean_acc'].values
-                tempdf = pd.DataFrame(index=ndeitems, data={'raw accuracy': ndeaccs})
-                tempdf.ix[modelitems, 'model accuracy'] = modelaccs
-                n = len(ndeitems)
-                r, p, n = nonnancorr(tempdf['raw accuracy'].values, tempdf['model accuracy'].values)
-                resultsrs.append(r);
-                resultsps.append(p);
-                resultsns.append(n)
-            axis = ax[fn]
-        if modelcolors:
-            axis.bar(range(len(resultsrs)), resultsrs, color=colors)
-        else:
-            axis.bar(range(len(resultsrs)), resultsrs)
-        axis.set_xticks(np.arange(len(keys)) + .5)
-        axis.set_xticklabels(keys, rotation=90)
-        axis.set_xlabel(xlabel)
-        sns.despine(ax=axis, top=True, right=True, left=False, bottom=False, trim=False)
+    comptypes=resultsdict.values()[0].keys()
+    for comp in comptypes:
+        simtype=resultsdict.values()[0][comp]['simtype']
+        f, ax = plt.subplots(1, len(flags), sharey=True)
+        f.suptitle('model comparisons: %s correlations' %comp)
+        ax[0].set_ylabel('%s correlation (%s) \n (on mean model result across iterations)' %(comp, simtype))
+        for fn, f in enumerate(flags):
+            if f:
+                xlabel = "generalization across %s" % f
+            else:
+                xlabel = "no generalization"
+            results = [resultsdict[k + '_result_' + f] for k in keys]
+            if modelcolors:
+                colors = [modelcolors[k + '_confs_' + f] for k in keys]
+            resultsrs, resultsps, resultsns, resultslerrs, resultsuerrs = [], [], [], [], []
+            for result in results:
+                result=result[comp]
+                r, p,n = result['corr'], result['p'], len(result['df'])
+                import math
+                stderr = 1.0 / math.sqrt(n - 3) #standard error of the fisher transformed distribution
+                lower = math.tanh(math.atanh(r) - stderr)#for 68% confidence intervals.. use stderr*1.96 if want 95% confidence intervals
+                upper = math.tanh(math.atanh(r) + stderr)
+                resultsrs.append(r);resultsps.append(p);resultsns.append(n);resultslerrs.append(lower); resultsuerrs.append(upper)
+                axis = ax[fn]
+            if errorbars:
+                yerr=[resultslerrs, resultsuerrs]
+            else:
+                yerr=[0 for el in resultsrs]
+            if modelcolors:
+                plotbar(resultsrs, colors=colors, ax=axis, yerr=yerr)
+            else:
+                plotbar(resultsrs, colors=colors, ax=axis, yerr=yerr)
+            axis.set_xticks(np.arange(len(keys)) + .5)
+            axis.set_xticklabels(keys, rotation=90)
+            axis.set_xlabel(xlabel)
+            sns.despine(ax=axis, top=True, right=True, left=False, bottom=False, trim=False)
 
+def plotindcomparisons(indresults, keys=None):
+    if keys:
+        keys=[k[:k.index('_')] for k in keys if k[:k.index('_')] in indresults.keys()]
+    else:
+        keys=indresults.keys()
+    plotvals=[indresults[key]['useremoacc'] for key in keys]
+    ax=plotbar(plotvals, ylim=[0,.15], xticklabels=keys, ylabel="proportion of subject-aligned \n model predictions", title='explicit fails', despine=True)
+    ax=plt.plot(ax.get_xlim(), [.05,.05], color='#CC5500', alpha=.5, linestyle='--')
 
 def plotgroupneuralmodelcorrs(modelcorrs, sems, robj, models, colors, ylim):
     ax = simplebar(modelcorrs, yerr=sems, title='%s-- %s of group data' % (robj.roi, robj.corrtype), xlabel='models',
@@ -458,13 +477,20 @@ def plottcresults(tcobjs, roilist):
             colors = sns.color_palette('PuBuGn', len(tcobj.models))
             allmodelcolors = cfg.vizcfg.modelcolors
             tcobj.colordict = {model: '#BBBBBB' for modeln, model in enumerate(tcobj.models)}
-            for key in allmodelcolors.keys():
-                if key in cfg.vizcfg.modelkeys:
+            for key in cfg.vizcfg.modelkeys:
+                if key in allmodelcolors.keys():
                     tcobj.colordict[key] = allmodelcolors[key]
             f, ax = plt.subplots()
-            for model in tcobj.models:
-                if model in cfg.vizcfg.modelkeys:
-                    tcobj.plottimecourse(model, ax=ax, plotnc=False, ylim=[-.06, .1])
+            for model in cfg.vizcfg.modelkeys:
+                if model in tcobj.models:
+                    tcobj.plottimecourse(model, ax=ax, plotnc=False, ylim=[-.04, .12])
+            ax.set_xticks([el for el in range(len(tcobj.steps))])
+            ax.set_xticklabels([str(el) for el in tcobj.steps])
+            ax.set_xlabel('RSA timecourse (TRs)')
+            ax.set_ylabel('neural-model correlation')
+            ax.set_title('neural-model correlations over time: %s' % (tcobj.roi))
+            ax.legend(loc=[1.05, .3])
+            sns.despine()
 
 #############################
 #dimensionality reduction
@@ -489,6 +515,7 @@ def plot3d(matrix, colors=['b'], dimname='dimension', figsize=[4, 3]):
     ax.set_xlabel('%s #%s' % (dimname[0], 0))
     ax.set_ylabel('%s #%s' % (dimname[1], 1))
     ax.set_zlabel('%s #%s' % (dimname[2], 2))
+    plt.legend()
     return ax
 
 
@@ -499,6 +526,7 @@ def plot2d(matrix, colors=['b'], dimname='dimension', figsize=[4, 3]):
         dimname = [dimname for el in range(2)]
     ax.set_xlabel('%s #%s' % (dimname[0], 0))
     ax.set_ylabel('%s #%s' % (dimname[1], 1))
+    plt.legend()
     return ax
 
 
@@ -571,7 +599,7 @@ def drawvector(eigenvectors, index, datamean, ax, ar, constant):
         ax.add_artist(a)
 
 
-def plotinputincomponentspace(obsscores, axislabels, mapping=None, componentindices=[0, 1, 2], title=None):
+def plotinputincomponentspace(obsscores, axislabels, mapping=None, componentindices=[0, 1, 2], title=None, plotlabels=True):
     #plot observations on 3 components
     componentindices = componentindices[:len(obsscores[0])]
     data = obsscores[:, componentindices]
@@ -589,15 +617,16 @@ def plotinputincomponentspace(obsscores, axislabels, mapping=None, componentindi
     if mapping:
         for label, name in mapping.items():
             if len(obsscores[0]) == 3:
-                ax.text3D(obsscores[axislabels == label, 0].mean(),
-                          obsscores[axislabels == label, 1].mean(),
-                          obsscores[axislabels == label, 2].mean(), name,
-                          bbox=dict(alpha=.5, edgecolor='w', facecolor='w'))
+                if plotlabels:
+                    ax.text3D(obsscores[axislabels == label, 0].mean(),
+                              obsscores[axislabels == label, 1].mean(),
+                              obsscores[axislabels == label, 2].mean(), name,
+                              bbox=dict(alpha=.5, edgecolor='w', facecolor='w'))
             else:
-                ax.text(obsscores[axislabels == label, 0].mean(),
-                        obsscores[axislabels == label, 1].mean(), name,
-                        bbox=dict(alpha=.5, edgecolor='w', facecolor='w'))
-
+                if plotlabels:
+                    ax.text(obsscores[axislabels == label, 0].mean(),
+                            obsscores[axislabels == label, 1].mean(), name,
+                            bbox=dict(alpha=.5, edgecolor='w', facecolor='w'))
 
 def plotdimensionsincomponentspace(dimloadings, dimlabels, mapping=None, componentindices=[0, 1, 2], title=None):
     #plot dimensions on 3 components

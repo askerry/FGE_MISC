@@ -9,6 +9,7 @@ sys.path.append('/mindhive/saxelab/scripts/aesscripts/')
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
+import scipy.stats
 import os
 import pickle
 import FGE_MISC.code.vizfuncs as viz
@@ -16,6 +17,10 @@ import FGE_MISC.code.vizfuncs as viz
 # basic prep functions
 def setup(ndefile, checks, deletecols):
     ndedf = pd.read_csv(ndefile)
+    ages=ndedf.age.dropna().values
+    genders=[g.lower() for g in ndedf.gender.dropna().values]
+    print "%s subjects, %s females" %(len(ages),len([g for g in genders if g[0]=='f']))
+    print "mean age: %.3f, sem: %.3f" %(np.mean(ages), np.std(ages)/np.sqrt(len(ages)))
     print "starting with %s rows" % (len(ndedf))
     ndedf = ndedf[ndedf.submission_date.notnull()]
     print "reduced to %s intact rows" % (len(ndedf))
@@ -73,6 +78,7 @@ def summarize(items, emos, rawconfusions, propconfusions):
     summary['count'] = rawconfusions.sum(axis=1)
     summary['accuracy'] = [propconfusions.loc[row['item'], row['answer']] for index, row in summary.iterrows()]
     print "overall accuracy: %.3f%%" % (summary['accuracy'].mean())
+    summary=summary[summary.answer!='Neutral']
     return summary
 
 
@@ -82,12 +88,28 @@ def score(df, orderedemos):
     summary = summarize(items, emos, rawconfusions, propconfusions)
     return rawconfusions, propconfusions, summary
 
+def compare(summary, orderedemos, vdict):
+    #anova across emotions
+    samples=[summary[summary.answer==emo].accuracy.values for emo in orderedemos]
+    f,p=scipy.stats.f_oneway(*samples)
+    df2=len(summary.accuracy.values)-len(orderedemos)
+    df1=len(orderedemos)-1
+    print "one-way anova comparing classification accuracy across emotions"
+    print "F(%s,%s)=%.2f, p=%.6f" %(df1,df2,f,p)
+    #compare valence
+    possample=summary[[emo in vdict['pos'] for emo in summary.answer.values]].accuracy.values
+    negsample=summary[[emo in vdict['neg'] for emo in summary.answer.values]].accuracy.values
+    t,p=scipy.stats.ttest_ind(negsample, possample)
+    df=len(summary.accuracy.values)-2
+    print "independent samples ttest comparing classification accuracy across positive and negative emotions"
+    print "Mneg(SEM)=%.2f(%.2f), Mpos(SEM)=%.2f(%.2f), t(%s)=%.2f, p=%.6f" %(np.mean(negsample), np.std(negsample)/np.sqrt(len(negsample)), np.mean(possample), np.std(possample)/np.sqrt(len(possample)), df, t, p)
+
 
 #collapse functions
 def collapseconf(confusions, summary, orderedemos):
     items, emos = summary['item'], summary['answer']
     tups = zip(emos, items)
-    collapsed = pd.DataFrame(index=confusions.columns, columns=confusions.columns).fillna(0)
+    collapsed = pd.DataFrame(index=orderedemos, columns=orderedemos).fillna(0)
     for e in orderedemos:
         relemos, relitems = zip(*[el for el in tups if el[0] == e])
         tempdf = confusions.loc[relitems, :]
@@ -108,13 +130,17 @@ def collapsesummary(summary, orderedemos):
 
 
 #main
-def main(ndefile, orderedemos, checks, visualize=True):
+def main(ndefile, cfg):
+    orderedemos=cfg.allorderedemos
+    checks=cfg.ndechecks
+    visualize=cfg.ndevisualize
     print "running setup for NDE..."
     ndedf = setup(ndefile, checks, deletecols)
     print
     print "item-wise results:"
     rawconfusions, propconfusions, summary = score(ndedf, orderedemos)
     orderedemos = [el for el in orderedemos if el != 'Neutral']  #we don't want neutral anymore
+    compare(summary, orderedemos, cfg.valencedict)
     print
     print "collapsing over items:"
     craw = collapseconf(rawconfusions, summary, orderedemos)

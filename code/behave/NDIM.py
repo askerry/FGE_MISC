@@ -185,8 +185,22 @@ def makesubjdf(df, subjcols=[]):
         if datarow:
             subjdf.loc[subj, :] = datarow[0]
     df = df[[col for col in df.columns if col not in subjcols]]
+    subjdf=subjdf[subjdf.gender.notnull()]
     return df, subjdf
 
+def summarize(df1, subjdf1, df2, subjdf2):
+    totaldf=pd.concat([df1, df2])
+    tsubjdf=pd.concat([subjdf1,subjdf2])
+    print "%s individual item responses, %s subjects" %(len(totaldf), len(tsubjdf))
+    def nanorfloat(val):
+        try:x=float(val);return True
+        except: return False
+    ages=tsubjdf.age[[nanorfloat(val) for val in tsubjdf.age.values]]
+    ages=[float(el) for el in ages.dropna().values]
+    genders=[f.lower() for f in tsubjdf.gender.dropna().values]
+    females=len([g for g in genders if g[0]=='f'])
+    print "%s females, age: mean(sem)=%.2f(%.2f)" %(females, np.mean(ages), np.std(ages)/np.sqrt(len(ages)))
+    counts=countitems(totaldf, visualize=False)
 
 def deletecols(df, dlist):
     cols = [c for c in df.columns if not all(df[c].isnull()) and not any([(string in c) for string in dlist])]
@@ -200,8 +214,8 @@ def countitems(df, visualize=True):
         plt.figure(figsize=[16, 2])
         counts.plot(kind='bar')
         plt.show()
-    print "%s to %s responses per item (mean=%.3f)" % (min(counts.values), max(counts.values), np.mean(counts.values))
-
+    print "%s to %s responses per item (mean=%.3f, sem=%.3f)" % (min(counts.values), max(counts.values), np.mean(counts.values), np.std(counts.values)/np.sqrt(len(counts.values)))
+    return counts.values
 
 ###########################################################################################    
 #dimensionality reduction
@@ -335,6 +349,16 @@ def reduction(matrix, ncomp=None, reductiontype='PCA'):
         varexplained = None
     return obsscores, dimloadings, recoveredinput, varexplained
 
+def printhighlowloaders(dimloadings, varexplained, dimlabels):
+    '''identify high and low loading dimensions for each component'''
+    sorteddims=[list(line) for line in list(dimlabels[np.argsort(dimloadings)])]
+    for pcn,pc in enumerate(dimloadings):
+        s=np.sort(pc)
+        varex=varexplained[pcn]
+        d=sorteddims[pcn]
+        print "component %s (explaining %.2f%% of variance):" %(pcn, varex*100)
+        print "    high loaders= %s, %s, %s (%.1f,%.1f,%.1f)"  %(d[-1],d[-2],d[-3],s[-1],s[-2],s[-3])
+        print "    low loaders= %s, %s, %s (%.1f,%.1f,%.1f)"  %(d[1],d[2],d[3],s[1],s[2],s[3])
 
 ###########################################################################################
 #modeling
@@ -452,6 +476,54 @@ def accuracies(labels, predictions, labelorder):
         labelaccs.append(np.mean(relguesses))
     return meanacc, labelaccs, acc
 
+def similarity(array1, array2, simtype='pearsonr'):
+    '''compute similarity between 2 arrays'''
+    if simtype == 'pearsonr':
+        corr, p = scipy.stats.pearsonr(array1, array2)
+    if simtype == 'spearmanr':
+        corr, p = scipy.stats.spearmanr(array1, array2)
+    return corr, p
+
+def compareconfmats(confvalues, labelorder, comparisons, simtype, dropdiag=False):
+    '''compare raw behavioral confusion matrix from NDE with with confusion matrix from a model-based classification'''
+    compconf = comparisons['cprop']
+    compconf = compconf.ix[labelorder, labelorder]
+    if dropdiag:
+        tc=compconf.values
+        tc[np.diag_indices(len(tc[0]))]=np.nan
+        comparray=tc.flatten()[~np.isnan(tc.flatten())]
+        tc=confvalues
+        tc[np.diag_indices(len(tc[0]))]=np.nan
+        confarray=tc.flatten()[~np.isnan(tc.flatten())]
+    else:
+        comparray, confarray = compconf.values.flatten(), confvalues.flatten()
+    if any([any(compconf.columns != labelorder), any(compconf.index != labelorder)]):
+        warnings.warn('label values are not aligned')
+    corr, p = similarity(confarray, comparray, simtype=simtype)
+    tempdf = pd.DataFrame(data={'behavioral confusions (NDE)': comparray, 'model confusions': confarray})
+    return {'df':tempdf, 'corr':corr, 'p':p, 'simtype':simtype}
+
+def comparemodel2behavior(result, behavior, orderedlabels, simtype='pearsonr'):
+    confmat, labelaccs = result.confmat, result.labelaccs
+    rawvals = [behavior['csummary'].accuracy.ix[emo] for emo in orderedlabels]
+    #compare accuracies (emo-wise)
+    tempdf = pd.DataFrame(data={'raw accuracy': rawvals, 'model accuracy': [el for el in labelaccs]})
+    corr,p = similarity(tempdf['raw accuracy'], tempdf['model accuracy'], simtype=simtype)
+    emowise={'df':tempdf, 'corr':corr, 'p':p, 'simtype':simtype}
+    #compare accuracies (item-wise)
+    ndeitems, ndeaccs = behavior['summary']['item'].values, behavior['summary']['accuracy'].values
+    modelitems, modelaccs = result.exemplaraccs['item'].values, result.exemplaraccs['mean_acc'].values
+    tempdf = pd.DataFrame(index=ndeitems, data={'raw accuracy': ndeaccs})
+    tempdf.ix[modelitems, 'model accuracy'] = modelaccs
+    corr,p = similarity(tempdf['raw accuracy'], tempdf['model accuracy'], simtype=simtype)
+    itemwise={'df':tempdf, 'corr':corr, 'p':p, 'simtype':simtype}
+    #compare to confusions from NDE
+    confmatcomp=compareconfmats(confmat, orderedlabels, behavior, simtype)
+    #compare to confusions from NDE without diagonal (i.e. excluding correct answers)
+    confmatcomp_nodiag=compareconfmats(confmat, orderedlabels, behavior, simtype, dropdiag=True)
+    return {'emowise':emowise, 'itemwise':itemwise, 'confmatcomp':confmatcomp, 'confmatcomp_nodiag': confmatcomp_nodiag}
+
+
 
 class ClassificationResult():
     def __init__(self, model, labelcol, features, gencol, iterations, orderedlabels):
@@ -471,10 +543,10 @@ class ClassificationResult():
             pickler = pickle.Pickler(output, pickle.HIGHEST_PROTOCOL)
             pickler.dump(self)
 
-
+'''
 def classificationwrapper(modeldata, allresults, chosenmodel, labelcol, features, gencol, iterations, orderedlabels,
                           folds, rootdir):
-    '''cleaning up the notebook with a dummy wrapper'''
+    #cleaning up the notebook with a dummy wrapper
     result = ClassificationResult(chosenmodel, labelcol, features, gencol, iterations, orderedlabels)
     print "classifying %s with generalization across %s: %s iterations of randomized split-half train/test" % (
         chosenmodel, gencol, iterations)
@@ -487,6 +559,78 @@ def classificationwrapper(modeldata, allresults, chosenmodel, labelcol, features
     allresults['%s_result_%s' % (chosenmodel, gencol)] = result
     result.save(os.path.join(rootdir, 'results', '%s_%s_results.pkl' % (chosenmodel, gencol)))
     return allresults
+'''
+def classificationwrapper(modeldata, allresults, chosenmodel, labelcol, features, gencol, iterations, orderedlabels,
+                          folds, rootdir):
+    '''cleaning up the notebook with a dummy wrapper'''
+    result = ClassificationResult(chosenmodel, labelcol, features, gencol, iterations, orderedlabels)
+    print "classifying %s with generalization across %s: %s iterations of randomized split-half train/test" % (
+        chosenmodel, gencol, iterations)
+    result.confmat, result.meanacc, result.labelaccs, result.exemplaraccs = iterativeclassification(modeldata, labelcol,
+                                                                                                    features, folds,
+                                                                                                    orderedlabels,
+                                                                                                    exemplarcol='item',
+                                                                                                    gencol=gencol,
+                                                                                                    iterations=iterations)
+    result.save(os.path.join(rootdir, 'results', '%s_%s_results.pkl' % (chosenmodel, gencol)))
+    return result
+###################################
+#individualized predictions
+###################################
+
+def createsinglemodel(df, labelcol, featurenames, exemplarcol):
+    '''create single trained model based on all data in df'''
+    train = compressdf(df, labelcol, exemplarcol)
+    train_X, train_Y = train[featurenames].values,train[labelcol].values
+    clf = mcfg.SVM_model()
+    clf = clf.fit(train_X, train_Y)
+    return clf
+
+def explicitacc(df):
+    emocols=[col for col in df.columns if 'extent' in col]
+    newdata={'item':df['item'].values, 'emo':df['emo'].values, 'rownum':df['rownum'].values, 'maxemos':[], 'pass':[]}
+    for index,row in df.iterrows():
+        rowmax=max(row[emocols])
+        maxemos=[col[:col.index('_')] for col in df.columns if row[col]==rowmax]
+        newdata['pass'].append(row['emo'] in maxemos)
+        newdata['maxemos'].append(maxemos)
+    return pd.DataFrame(index=df.index.values, data=newdata)
+
+def sortcorrects(modeldata, explicitdf):
+    eaccdf=explicitacc(explicitdf)
+    passers, failers=eaccdf[eaccdf['pass']==True]['rownum'].values, eaccdf[eaccdf['pass']==False]['rownum'].values
+    correctdf=modeldata[[m in passers for m in modeldata['rownum'].values]]
+    incorrectdf=modeldata[[m in failers for m in modeldata['rownum'].values]]
+    return eaccdf, correctdf, incorrectdf
+
+def testfailers(correctdf, incorrectdf, labelcol, features, orderedlabels):
+    clf=createsinglemodel(correctdf, labelcol, features, 'item')
+    test = compressdf(incorrectdf, 'emo', 'item')
+    test_X, test_Y = test[features].values,test[labelcol].values
+    predictions = clf.predict(test_X)
+    acc=float(sum([int(p==test_Y[pn]) for pn,p in enumerate(predictions)]))/len(predictions)
+    return test_Y, predictions, acc
+
+def testinds(eaccdf, correctdf, incorrectdf, labelcol, features, orderedlabels):
+    singleguessers= eaccdf[[len(emos)==1 for emos in eaccdf['maxemos'].values]]['rownum'].values
+    guessdict={row['rownum']:row['maxemos'][0] for index,row in eaccdf[[len(emos)==1 for emos in eaccdf['maxemos'].values]].iterrows()}
+    idf=incorrectdf[[m in singleguessers for m in incorrectdf['rownum'].values]]
+    clf=createsinglemodel(correctdf, labelcol, features, 'item')
+    itest_X=idf[features]
+    itest_intendedemos=idf['emo'].values
+    itest_useremos=[guessdict[rownum] for rownum in idf.rownum.values]
+    predictions = clf.predict(itest_X)
+    useremopercent=float(sum([int(p==itest_useremos[pn]) for pn,p in enumerate(predictions)]))/len(predictions)
+    intendedemopercent=float(sum([int(p==itest_intendedemos[pn]) for pn,p in enumerate(predictions)]))/len(predictions)
+    return useremopercent, intendedemopercent, idf
+
+def individualizedmodeling(modeldata, explicitdf, chosenmodel, labelcol, features, gencol, iterations, orderedlabels, folds, rootdir):
+    eaccdf, correctdf, incorrectdf= sortcorrects(modeldata, explicitdf)
+    regtest_Y, regpreds, regacc= testfailers(correctdf, incorrectdf, labelcol, features, orderedlabels)
+    useremopercent, intendedemopercent, idf=testinds(eaccdf, correctdf, incorrectdf, labelcol, features, orderedlabels)
+    print "training on %s pass items, testing on %s failed items:" %(len(correctdf), len(idf))
+    print "accuracy (relative to intended emotion): %.3f, user-consistency (prediction aligns with user max): %.3f" %(intendedemopercent, useremopercent)
+    return {'useremoacc':useremopercent, 'intendedemoacc':intendedemopercent, 'numitems':len(idf)}
 
 
 ###########################################################################################    
@@ -602,30 +746,3 @@ def makeconfRDM(flag, chosenmodel, confmatsaves):
     cfdict = confmatsaves['%s_confs_%s' % (chosenmodel, flag)]
     matrix = -1 * np.array(cfdict['simmat_across'])
     return {'simmat_across': list(matrix), 'labels': cfdict['labels']}
-
-
-def makecosineconfmat(cosinedict, labelorder, item2emomapping, iterations=2, similarity='euclidean'):
-    items = cosinedict['itemlabels']
-    mat = [list(line) for line in cosinedict['matrix']]  #note: this is already in distance rather than similarity space
-    emos = [item2emomapping[item] for item in items]
-    df = pd.DataFrame(data={'item': items, 'emo': emos}, index=items)
-    for itemn, item in enumerate(items):
-        df[item] = [line[itemn] for line in mat]
-    matrices = []
-    for i in range(iterations):
-        idx1, idx2 = [], ['emo']
-        emodf = pd.DataFrame(index=labelorder, columns=labelorder)
-        for cond in labelorder:
-            indices = df[df['emo'] == cond].index.values
-            np.random.shuffle(indices)
-            idx1.extend(indices[0:5])
-            idx2.extend(indices[5:10])
-        iterdf = df.ix[idx1, idx2]
-        emodf = iterdf.groupby('emo').mean().T
-        emodf.index = [item2emomapping[e] for e in emodf.index]
-        emodf = emodf.groupby(emodf.index).mean()
-        matrices.append(emodf.values)
-    simmat_untransformed = np.mean(matrices, axis=0)
-    simmat = transformsimilarities(-1 * simmat_untransformed, similarity)
-    return {'simmat': None, 'simmat_across': simmat, 'labels': labelorder}
-    
