@@ -19,6 +19,7 @@ from copy import deepcopy
 import scipy.stats
 import collections
 import FGE_MISC.code.vizfuncs as viz
+from copy import deepcopy
 
 # ##########################################################################################
 #misc
@@ -70,6 +71,8 @@ def setup(dfile, checks, item2emomapping, orderedemos, appraisals, subjcols, fix
     avgthresh = checks.values()[0][0]
     indthresh = checks.values()[0][1]
     df = pd.read_csv(dfile)
+    if 'safey' in df.columns:
+        df=df.rename(columns={'safey':'safety', 'safey_qemo':'safety_qemo', 'safey_qlabel':'safety_qemo'})
     print "starting with %s rows...." % (len(df))
     if 'surprised_dim' in appraisals and 'disgusted_dim' in appraisals:
         print "hack to convert disgusted and surprised from emos to appraisals"
@@ -219,7 +222,59 @@ def countitems(df, visualize=True):
 
 ###########################################################################################    
 #dimensionality reduction
-###########################################################################################    
+###########################################################################################
+def regress(X,y):
+    from sklearn.linear_model import LinearRegression
+    clf= LinearRegression()
+    clf.fit(X, y)
+    R2=clf.score(X, y)
+    predicted_y=clf.predict(X)
+    residual_error=y-predicted_y
+    return R2, residual_error
+def iterativeregression(avgs, rootdir, plotit=False):
+    features=avgs.columns
+    keptfeatures,varexplained_full,varexplained_ind=[],[],[]
+    initialdata=avgs[features].values
+    y=avgs[features].values # y starts as initialdata and subsequently becomes the residuals
+    for i in range(len(features)):
+        R2s=[]
+        for f in range(len(features)): #regress each isolated feature against the data
+            if f not in keptfeatures: #(if the feature has not already been selected)
+                X = np.array([item[f] for item in initialdata]).reshape(len(y),1)
+                R2, residual_error = regress(X,y)
+                R2s.append(R2)
+            else:
+                R2s.append(0)
+        fn=R2s.index(np.max(R2s)) # best feature
+        keptfeatures.append(fn)
+        #recompute the relevant X vector and get its inidividual varexplained (in the fulldataset)
+        keeperX = np.array([item[fn] for item in initialdata]).reshape(len(y),1)
+        R2, residual_error = regress(keeperX,initialdata)
+        varexplained_ind.append(R2)
+        #generate full X (of all kept features) to get the residuals
+        fullX = np.array([item[keptfeatures] for item in initialdata])
+        R2, residual_error = regress(fullX,initialdata)
+        y = residual_error # the residuals are now our outcome variable for the subsequent iteration
+        varexplained_full.append(R2)
+    resultingfeatures=[features[fn] for fn in keptfeatures]
+    print (', ').join(resultingfeatures)
+    if plotit:
+        f,ax=plt.subplots(1,2, figsize=[14,4])
+        ax[0].plot(range(len(varexplained_full)), varexplained_full)
+        ax[0].set_xlabel('features')
+        ax[0].set_ylabel('total variance explained (cumulative)')
+        ax[0].set_xticks(range(len(resultingfeatures)))
+        ax[0].set_xticklabels(resultingfeatures, rotation=90)
+        ax[1].plot(range(len(varexplained_ind)), varexplained_ind)
+        ax[1].set_xlabel('features')
+        ax[1].set_ylabel('individual feature R-squared')
+        ax[1].set_xticks(range(len(resultingfeatures)))
+        ax[1].set_xticklabels(resultingfeatures, rotation=90)
+        sns.despine()
+    results={'df':avgs, 'features':resultingfeatures, 'varexp_full':varexplained_full, 'varexp_ind':varexplained_ind}
+    quicksave(results, os.path.join(rootdir,'results','ITERATIVERESULTS.pkl'))
+    return results
+
 def affinitypropcluster(datamatrix, true_labels, axislabels, dim1=0, dim2=1):
     '''takes a dataset and returns and plots set of clusters using affinity propogation (advantage: don't have to speciy K)'''
     apm = mcfg.affinityprop()
@@ -316,9 +371,8 @@ def hierarchicalcluster(datamatrix, dimlabels, similarity='euclidean', colorthre
     return clustering, dend
 
 
-def reduction(matrix, ncomp=None, reductiontype='PCA'):
+def reduction(matrix, ncomp=None, reductiontype='PCA', plotit=True):
     #set up figure
-    f, ax = plt.subplots(1, 3, figsize=[10, 3])
     if reductiontype == 'PCA':
         ca = mcfg.PCA()
     elif reductiontype == 'ICA':
@@ -330,17 +384,21 @@ def reduction(matrix, ncomp=None, reductiontype='PCA'):
     dimloadings = ca.components_  #loadings of initial data dimensions onto these components (eigenvectors)
     recoveredinput = ca.inverse_transform(
         obsscores)  #recomputed obs x dimension matrix based on scores on the components, and weights on components
-    if ncomp:  #if we know our intended # of components
-        viz.plotmatrix(obsscores, xlabel='components', ylabel='observations', ax=ax[0], title='obsscores')
-        viz.plotmatrix(dimloadings, xlabel='initial dimensions', ylabel='components', ax=ax[1], title='dim loadings')
-    else:  #if we are fitting an initial model to evaluate dimensions
-        viz.plotmatrix(matrix, xlabel='initial dimensions', ylabel='initial observations', ax=ax[0],
-                   title='initial input')
-        if reductiontype == 'PCA':
-            viz.plotscree(ca, ax=ax[1])
-    viz.plotmatrix(recoveredinput, xlabel='initial dimensions', ylabel='transformed observations', ax=ax[2],
-               title='recovered input (all components)')
-    plt.tight_layout()
+    if plotit:
+        f, ax = plt.subplots(1, 3, figsize=[10, 3])
+        if ncomp:  #if we know our intended # of components
+            viz.plotmatrix(obsscores, xlabel='components', ylabel='observations', ax=ax[0], title='obsscores')
+            viz.plotmatrix(dimloadings, xlabel='initial dimensions', ylabel='components', ax=ax[1], title='dim loadings')
+        else:  #if we are fitting an initial model to evaluate dimensions
+            viz.plotmatrix(matrix, xlabel='initial dimensions', ylabel='initial observations', ax=ax[0],
+                       title='initial input')
+            if reductiontype == 'PCA':
+                viz.plotscree(ca.explained_variance_ratio_, ax=ax[1])
+        if not ncomp:
+            ncomp='all'
+        viz.plotmatrix(recoveredinput, xlabel='initial dimensions', ylabel='transformed observations', ax=ax[2],
+                   title='recovered input (%s components)' %(ncomp))
+        plt.tight_layout()
     print "reduced to %s dimensions" % (len(ca.components_))
     if reductiontype == 'PCA':
         print "explaining %.3f%% of variance" % (100 * np.sum(ca.explained_variance_ratio_))
@@ -358,7 +416,7 @@ def printhighlowloaders(dimloadings, varexplained, dimlabels):
         d=sorteddims[pcn]
         print "component %s (explaining %.2f%% of variance):" %(pcn, varex*100)
         print "    high loaders= %s, %s, %s (%.1f,%.1f,%.1f)"  %(d[-1],d[-2],d[-3],s[-1],s[-2],s[-3])
-        print "    low loaders= %s, %s, %s (%.1f,%.1f,%.1f)"  %(d[1],d[2],d[3],s[1],s[2],s[3])
+        #print "    low loaders= %s, %s, %s (%.1f,%.1f,%.1f)"  %(d[1],d[2],d[3],s[1],s[2],s[3])
 
 ###########################################################################################
 #modeling
@@ -448,6 +506,7 @@ def iterativeclassification(df, classcol, featurecols, folds, labelorder, exempl
         labelaccs.append(ec)
         exemplardf = updateexemplars(exemplardf, exemplarcol, i, exemplarindices, exemplaracc)
     confmat = np.nanmean(confmat, axis=0)
+    confmat=confmat/np.sum(confmat,axis=1)#transform from raw values to proportions
     meanacc = np.nanmean(meanacc)
     labelaccs = np.nanmean(labelaccs, axis=0)
     exemplardf = compressexemplars(exemplardf)
@@ -484,23 +543,23 @@ def similarity(array1, array2, simtype='pearsonr'):
         corr, p = scipy.stats.spearmanr(array1, array2)
     return corr, p
 
-def compareconfmats(confvalues, labelorder, comparisons, simtype, dropdiag=False):
+def compareconfmats(mconf, labelorder, comparisons, simtype, dropdiag=False):
     '''compare raw behavioral confusion matrix from NDE with with confusion matrix from a model-based classification'''
-    compconf = comparisons['cprop']
-    compconf = compconf.ix[labelorder, labelorder]
+    bconf = comparisons['cprop']
+    bconf = bconf.ix[labelorder, labelorder]
     if dropdiag:
-        tc=compconf.values
+        tc=deepcopy(bconf.values)
         tc[np.diag_indices(len(tc[0]))]=np.nan
-        comparray=tc.flatten()[~np.isnan(tc.flatten())]
-        tc=confvalues
+        barray=tc.flatten()[~np.isnan(tc.flatten())]
+        tc=deepcopy(mconf)
         tc[np.diag_indices(len(tc[0]))]=np.nan
-        confarray=tc.flatten()[~np.isnan(tc.flatten())]
+        marray=tc.flatten()[~np.isnan(tc.flatten())]
     else:
-        comparray, confarray = compconf.values.flatten(), confvalues.flatten()
-    if any([any(compconf.columns != labelorder), any(compconf.index != labelorder)]):
+        barray, marray = bconf.values.flatten(), mconf.flatten()
+    if any([any(bconf.columns != labelorder), any(bconf.index != labelorder)]):
         warnings.warn('label values are not aligned')
-    corr, p = similarity(confarray, comparray, simtype=simtype)
-    tempdf = pd.DataFrame(data={'behavioral confusions (NDE)': comparray, 'model confusions': confarray})
+    corr, p = similarity(marray, barray, simtype=simtype)
+    tempdf = pd.DataFrame(data={'behavioral confusions (NDE)': barray, 'model confusions': marray})
     return {'df':tempdf, 'corr':corr, 'p':p, 'simtype':simtype}
 
 def comparemodel2behavior(result, behavior, orderedlabels, simtype='pearsonr'):
@@ -508,14 +567,14 @@ def comparemodel2behavior(result, behavior, orderedlabels, simtype='pearsonr'):
     rawvals = [behavior['csummary'].accuracy.ix[emo] for emo in orderedlabels]
     #compare accuracies (emo-wise)
     tempdf = pd.DataFrame(data={'raw accuracy': rawvals, 'model accuracy': [el for el in labelaccs]})
-    corr,p = similarity(tempdf['raw accuracy'], tempdf['model accuracy'], simtype=simtype)
+    corr,p = similarity(tempdf['raw accuracy'].values, tempdf['model accuracy'].values, simtype=simtype)
     emowise={'df':tempdf, 'corr':corr, 'p':p, 'simtype':simtype}
     #compare accuracies (item-wise)
     ndeitems, ndeaccs = behavior['summary']['item'].values, behavior['summary']['accuracy'].values
     modelitems, modelaccs = result.exemplaraccs['item'].values, result.exemplaraccs['mean_acc'].values
     tempdf = pd.DataFrame(index=ndeitems, data={'raw accuracy': ndeaccs})
     tempdf.ix[modelitems, 'model accuracy'] = modelaccs
-    corr,p = similarity(tempdf['raw accuracy'], tempdf['model accuracy'], simtype=simtype)
+    corr,p = similarity(tempdf['raw accuracy'].values, tempdf['model accuracy'].values, simtype=simtype)
     itemwise={'df':tempdf, 'corr':corr, 'p':p, 'simtype':simtype}
     #compare to confusions from NDE
     confmatcomp=compareconfmats(confmat, orderedlabels, behavior, simtype)
@@ -543,12 +602,21 @@ class ClassificationResult():
             pickler = pickle.Pickler(output, pickle.HIGHEST_PROTOCOL)
             pickler.dump(self)
 
+def classpar(chosenmodel, modeltypes, allresults, inputs, orderedemos, rootdir):
+    modeldata,features=modeltypes[chosenmodel][0],modeltypes[chosenmodel][1]
+    #### model without generalization
+    rNone=classificationwrapper(modeldata,allresults, chosenmodel, inputs['labelcol'], features, None, inputs['iterations'], orderedemos, inputs['folds'], rootdir)
+    #### model with generalization across items
+    rItem=classificationwrapper(modeldata,allresults, chosenmodel, inputs['labelcol'], features, 'item', inputs['iterations'], orderedemos, inputs['folds'], rootdir)
+    confmat=makeconfdict(rItem, orderedemos)
+    return rNone, rItem, confmat
+
 '''
 def classificationwrapper(modeldata, allresults, chosenmodel, labelcol, features, gencol, iterations, orderedlabels,
                           folds, rootdir):
     #cleaning up the notebook with a dummy wrapper
     result = ClassificationResult(chosenmodel, labelcol, features, gencol, iterations, orderedlabels)
-    print "classifying %s with generalization across %s: %s iterations of randomized split-half train/test" % (
+    print "classifying %s across %s: %s iterations randomized split-half train/test" % (
         chosenmodel, gencol, iterations)
     result.confmat, result.meanacc, result.labelaccs, result.exemplaraccs = iterativeclassification(modeldata, labelcol,
                                                                                                     features, folds,
@@ -564,7 +632,7 @@ def classificationwrapper(modeldata, allresults, chosenmodel, labelcol, features
                           folds, rootdir):
     '''cleaning up the notebook with a dummy wrapper'''
     result = ClassificationResult(chosenmodel, labelcol, features, gencol, iterations, orderedlabels)
-    print "classifying %s with generalization across %s: %s iterations of randomized split-half train/test" % (
+    print "classifying %s with across %s: %s iterations randomized split-1/2 train/test" % (
         chosenmodel, gencol, iterations)
     result.confmat, result.meanacc, result.labelaccs, result.exemplaraccs = iterativeclassification(modeldata, labelcol,
                                                                                                     features, folds,

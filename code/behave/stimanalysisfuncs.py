@@ -49,6 +49,7 @@ def bagofwords(df, item2emomapping):
     bagofwords = bagofwords.toarray()
     itemavgs = [list(line) for line in bagofwords]
     ndf = makedataframe(itemavgs, itemlabels, item2emomapping)
+    ndimf.quicksave(ndf, os.path.join(rootdir,'data/stimdfs','bagofwordsdf.pkl'))
     return ndf
 
 
@@ -69,7 +70,7 @@ def tfidf(df, item2emomapping, visualize=False, computecosine=False):
         return stemmed
 
     def tokenize(text, stemmer=None):
-        #stemmer=PorterStemmer()
+        stemmer=PorterStemmer()
         tokens = nltk.word_tokenize(text)
         filtered = [w for w in tokens if not w in stopwords.words('english')]
         if stemmer:
@@ -167,6 +168,26 @@ def sentimentbow(df, item2emomapping, trainset=[], stemmer=PorterStemmer()):
     ndimf.quicksave(ndf, os.path.join(rootdir,'data/stimdfs','sentbowdf.pkl'))
     return ndf
 
+def computeindfeatspace(avgs, item2emomapping):
+    ndfs={}
+    for feature in avgs.columns:
+        column=avgs[feature].values
+        indices=avgs[feature].index
+        ndf = makedataframe([[el] for el in column], indices, item2emomapping)
+        feature=feature.replace('_','')+'feat'
+        ndfs[feature]=ndf
+    ndimf.quicksave(ndfs, os.path.join(rootdir,'data/stimdfs','indfeaturedfs.pkl'))
+    return ndfs
+
+def computePCAspace(pcar, item2emomapping):
+    ndfs=[]
+    compscores=pcar['obsscores'].T
+    for pcn,pc in enumerate(compscores):
+        ndf = makedataframe([[el] for el in pc], pcar['stimlabels'], item2emomapping)
+        ndimf.quicksave(ndf, os.path.join(rootdir,'data/stimdfs','pcacomp%s.pkl' %pcn))
+        ndfs.append(ndf)
+    return ndfs
+
 #similarity in NDE confusions:
 def computeNDEspace(NDE_output, item2emomapping):
     itemavgs=NDE_output['propconfusions'][[col for col in NDE_output['propconfusions'].columns if col !='Neutral']]
@@ -177,7 +198,7 @@ def computeNDEspace(NDE_output, item2emomapping):
     return ndf
 
 #cohmetrix
-def computecohmetrixspace(df, item2emomapping, cols=[], excludecols=[]):
+def computecohmetrixspace(df, item2emomapping, cols=[], excludecols=[], filename='cohmetrixdf'):
     print "creating cohmetrix feature space"
     if len(cols) == 0:
         cols = [col for col in df.columns]
@@ -189,7 +210,7 @@ def computecohmetrixspace(df, item2emomapping, cols=[], excludecols=[]):
     df = (df - df.mean()) / (df.std())  #zscore each column
     itemavgs = [line for line in df.values][0:200]
     ndf = makedataframe(itemavgs, itemlabels, item2emomapping)
-    ndimf.quicksave(ndf, os.path.join(rootdir,'data/stimdfs','cohmetrixdf.pkl'))
+    ndimf.quicksave(ndf, os.path.join(rootdir,'data/stimdfs','%s.pkl' %filename))
     return ndf
 
 

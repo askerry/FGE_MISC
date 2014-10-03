@@ -11,6 +11,7 @@ from sklearn.cross_decomposition import PLSRegression
 from sklearn.cluster import AffinityPropagation
 from sklearn.decomposition import PCA, FastICA
 import numpy as np
+from collections import OrderedDict as odict
 
 
 class DataFiles():
@@ -43,7 +44,7 @@ class Config():
 # configure main modeling parameters here
 class ModelConfig():
     def SVM_model(self):
-        model = svm.SVC(C=.01, kernel='linear')  #svm.SVC implements multiclass as one vs. one
+        model = svm.SVC(C=1, kernel='linear')  #svm.SVC implements multiclass as one vs. one
         #SVC(C=1.0, cache_size=200, class_weight=None, coef0=0.0, degree=3,gamma=0.0, kernel='rbf', max_iter=-1, probability=False, random_state=None,shrinking=True, tol=0.001, verbose=False)
         #model=svm.LinearSVC() #svm.LinearSVC() implements multiclass as one vs. test
         #see http://scikit-learn.org/stable/modules/svm.html
@@ -64,11 +65,11 @@ class ModelConfig():
         return ap
 
     def PCA(self):
-        pca=PCA()
+        pca = PCA()
         return pca
 
     def ICA(self):
-        ica=FastICA()
+        ica = FastICA()
         return ica
 
     def printmodelparams(self):
@@ -94,8 +95,9 @@ dfiles.cohmetrixfile = os.path.join(rootdir, 'data', 'stimdata', 'FGE_stims_cohm
 dfiles.FGEstimfile = os.path.join(rootdir, 'data', 'stimdata', 'FGE_stims.csv')
 dfiles.intensityfile = os.path.join(rootdir, 'data', 'stimdata', 'behavioralintensity.csv')
 
-cfg = Config()
+############################# general analysis configuration details ############################
 
+cfg = Config()
 cfg.allorderedemos = ['Grateful', 'Joyful', 'Hopeful', 'Excited', 'Proud', 'Impressed', 'Content', 'Nostalgic',
                       'Surprised', 'Lonely', 'Furious', 'Terrified', 'Apprehensive', 'Annoyed', 'Guilty', 'Disgusted',
                       'Embarrassed', 'Devastated', 'Disappointed', 'Jealous', 'Neutral']
@@ -115,127 +117,73 @@ cfg.ndimchecks = {'main_character': [7, 5]}  #avgthresh, indthresh
 cfg.asdchecks = {'main_character': [0, 0]}  #avgthresh, indthresh (different exclusion criteria)
 cfg.ndevisualize = False
 cfg.ndimvisualize = True
-cfg.valencedict={'pos':['Grateful', 'Joyful', 'Hopeful', 'Excited', 'Proud', 'Impressed', 'Content', 'Nostalgic'], 'neg':['Lonely', 'Furious', 'Terrified', 'Apprehensive', 'Annoyed', 'Guilty', 'Disgusted',
-                      'Embarrassed', 'Devastated', 'Disappointed', 'Jealous']}
+cfg.valencedict = {'pos': ['Grateful', 'Joyful', 'Hopeful', 'Excited', 'Proud', 'Impressed', 'Content', 'Nostalgic'],
+                   'neg': ['Lonely', 'Furious', 'Terrified', 'Apprehensive', 'Annoyed', 'Guilty', 'Disgusted',
+                           'Embarrassed', 'Devastated', 'Disappointed', 'Jealous']}
 
-#####viz
+###################### visualization configurations ########################
+
 def hex_to_rgb(value):
     value = value.lstrip('#')
     lv = len(value)
-    return tuple(float(int(value[i:i + lv // 3], 16))/255 for i in range(0, lv, lv // 3))
+    return tuple(float(int(value[i:i + lv // 3], 16)) / 255 for i in range(0, lv, lv // 3))
 def offset(rgb, offset):
-    return tuple([el*offset for el in rgb])
+    return tuple([el * offset for el in rgb])
 
 vizcfg = Config()
-
-vizcfg.basecolor='#4c72b0'
-vizcfg.cmap='Greys'
+vizcfg.basecolor = '#4c72b0'
+vizcfg.cmap = 'Greys'
 
 colordict = {'benchmark': '#3344AA', 'dimmodels': '#5577CC', 'control': '#228855', 'textsentiment': '#00FF44',
-                    'other': '#BBCCCC'}
-vizcfg.colordict={item[0]:hex_to_rgb(item[1]) for item in colordict.items()}
-vizcfg.vizmodels = ['NDEconfmat_raw',
-                    'NDEconfmat_rdm',
-                    'NDEconfmat_confs_item',
-                    'NDEconfmat_confs_None',
-                    'explicits_rdm',
-                    'explicits_confs_item',
-                    'explicits_confs_None',
-                    '37dim_rdm',
-                    '37dim_confs_item',
-                    '37dim_confs_None',
-                    'basicemo_rdm',
-                    'basicemo_confs_item',
-                    'basicemo_confs_None',
-                    'valencearousal_rdm',
-                    'valencearousal_confs_item',
-                    'valencearousal_confs_None',
-                    'valence_rdm',
-                    'valence_confs_item',
-                    'valence_confs_None',
-                    'arousal_rdm',
-                    'arousal_confs_item',
-                    'arousal_confs_None',
-                    'sentimentBoW_rdm',
-                    'sentimentBoW_confs_item',
-                    'sentimentBoW_confs_None',
-                    'sentimentRNTN_rdm',
-                    'sentimentRNTN_confs_item',
-                    'sentimentRNTN_confs_None',
-                    'cohmetrix_rdm',
-                    'cohmetrix_confs_item',
-                    'cohmetrix_confs_None',
-                    'tfidf_rdm',
-                    'tfidf_confs_item',
-                    'tfidf_confs_None',
-                    'intensity_rdm',
-                    'intensity_confs_item',
-                    'intensity_confs_None']
-vizcfg.excludemodels = ['NDEconfmat_rdm', 'explicits_rdm']#, 'tfidf_rdm', 'cohmetrix_rdm']
-vizcfg.flags=['rdm']
-vizcfg.modelkeys = [m for m in vizcfg.vizmodels if m not in vizcfg.excludemodels]
-for f in vizcfg.flags:
-    vizcfg.modelkeys= [m for m in vizcfg.modelkeys if f in m]
-vizcfg.allmodeltypes = {'37dim_rdm': 'dimmodels',
-                        'arousal_rdm': 'dimmodels',
-                        'valence_rdm': 'dimmodels',
-                        'cohmetrix_rdm': 'control',
-                        '37dim_confs_item': 'dimmodels',
-                        '37dim_confs_None': 'dimmodels',
-                        'sentimentBoW_confs_item': 'textsentiment',
-                        'sentimentBoW_confs_None': 'textsentiment',
-                        'explicits_confs_item': 'benchmark',
-                        'explicits_confs_None': 'benchmark',
-                        'basicemo_rdm': 'dimmodels',
-                        'basicemo_confs_item': 'dimmodels',
-                        'basicemo_confs_None': 'dimmodels',
-                        'explicits_rdm': 'benchmark',
-                        'cohmetrix_confs_item': 'control',
-                        'cohmetrix_confs_None': 'control',
-                        'sentimentRNTN_rdm': 'textsentiment',
-                        'valence_confs_item': 'dimmodels',
-                        'valence_confs_None': 'dimmodels',
-                        'tfidf_rdm': 'control',
-                        'tfidf_confs_item': 'control',
-                        'tfidf_confs_None': 'control',
-                        'intensity_rdm': 'other',
-                        'sentimentBoW_rdm': 'textsentiment',
-                        'NDEconfmat_rdm': 'benchmark',
-                        'NDEconfmat_raw': 'benchmark',
-                        'NDEconfmat_confs_None': 'benchmark',
-                        'NDEconfmat_confs_item': 'benchmark',
-                        'arousal_confs_item': 'dimmodels',
-                        'intensity_confs_item': 'other',
-                        'sentimentRNTN_confs_item': 'textsentiment',
-                        'valencearousal_confs_item': 'dimmodels',
-                        'arousal_confs_None': 'dimmodels',
-                        'intensity_confs_None': 'other',
-                        'sentimentRNTN_confs_None': 'textsentiment',
-                        'valencearousal_confs_None': 'dimmodels',
-                        'valencearousal_rdm': 'dimmodels'}
-vizcfg.modelcolors = {key: vizcfg.colordict[vizcfg.allmodeltypes[key]] for key in vizcfg.allmodeltypes.keys()}
-offsets=list(np.arange(.5,1,.05))
-np.random.shuffle(offsets)
+             'other': '#BBCCCC', 'dimreduction': '#CC7788', 'appraisalfeature':'#BBCC88'}
+vizcfg.colordict = {item[0]: hex_to_rgb(item[1]) for item in colordict.items()}
+models = odict(
+    [('behaviorialconfs', 'benchmark'), ('explicits', 'benchmark'), ('37appraisals', 'dimmodels'), ('basicemo', 'dimmodels'),
+     ('valencearousal', 'dimmodels'), ('valence', 'dimmodels'), ('arousal', 'dimmodels'),
+     ('sentimentBoW', 'textsentiment'), ('sentimentRNTN', 'textsentiment'), ('cohmetrix', 'control'),
+     ('syntax', 'control'), ('readingease', 'control'), ('tfidf', 'control'), ('bagofwordsdf', 'control'),
+     ('intensity', 'control'), ('1stPC', 'dimreduction'), ('2ndPC', 'dimreduction'), ('3rdPC', 'dimreduction')])
+for f in ['dangerfeat','occurredfeat','expectednessfeat','peoplefeat','closeothersfeat','relationshipinfluencefeat','knowledgechangefeat','pressurefeat','selfinvolvementfeat','moralfeat','agentintentionfeat','suddennessfeat','futurefeat','othersknowledgefeat','controlfeat','agentsituationfeat','safetyfeat','selfcausefeat','certaintyfeat','relevancefeat','consequencesfeat','selfesteemfeat','pastfeat','rememberfeat','familiarityfeat','pleasantnessfeat','selfconsistencyfeat','fairnessfeat','goalconsistencyfeat','mentalstatesfeat','agentcausefeat','attentionfeat','alteringfeat','repetitionfeat','copingfeat','freedomfeat','bodilydiseasefeat','psychologicalchangefeat']:
+    models[f]='appraisalfeature'
+dimmodels=['37appraisals', 'basicemo', 'valencearousal', 'valence', 'arousal']
+excludemodels = ['behaviorialconfs', 'explicits', 'cohmetrix', 'bagofwordsdf']
+flags = ['rdm', 'confs_item', 'confs_None']
+vizcfg.allmodels = odict()
+vizcfg.excludemodels,vizcfg.dimmodels = [],[]
+for flag in flags:
+    for m in excludemodels:
+        vizcfg.excludemodels.append(m + '_' + flag)
+    for m in models.keys():
+        vizcfg.allmodels[m + '_' + flag] = models[m]
+    for m in dimmodels:
+        vizcfg.dimmodels.append(m + '_' + flag)
+
+vizcfg.vizflag = 'rdm'
+vizcfg.modelkeys = [m for m in vizcfg.allmodels.keys() if m not in vizcfg.excludemodels and vizcfg.vizflag in m]
+vizcfg.PCAkeys = [m for m in vizcfg.allmodels.keys() if 'PC' in m and vizcfg.vizflag in m]
+vizcfg.featkeys = [m for m in vizcfg.allmodels.keys() if 'feat' in m and vizcfg.vizflag in m]
+
+vizcfg.modelcolors = {key: vizcfg.colordict[vizcfg.allmodels[key]] for key in vizcfg.allmodels.keys()}
+offsets = [0.85, 0.6, 0.75, 0.5, 0.8, 0.7, 0.9, 0.95, 0.55, 0.65, 0.6, 0.5, 0.75, 0.85, 0.8, 0.7, 0.9, 0.95, 0.55, 0.65, 0.6, 0.5, 0.75, 0.85, 0.8, 0.7, 0.9, 0.95, 0.55, 0.65, 0.6, 0.5, 0.75, 0.85, 0.8, 0.7,0.9, 0.95, 0.55,0.65]
 for key in vizcfg.modelkeys:
-    vizcfg.modelcolors[key] = offset(vizcfg.colordict[vizcfg.allmodeltypes[key]], offsets.pop())
+    vizcfg.modelcolors[key] = offset(vizcfg.colordict[vizcfg.allmodels[key]], offsets.pop())
+
+tickcfg = {}
+tickcfg['emos'] = cfg.condmapping
+tickcfg['models'] = {}
+
+############ cohmetrix ###############
 
 cohmetrixcfg = Config()
-cohmetrixcfg.excludecols = ['qnum_str', 'cond', 'stimname', 'text', 'qnum',
-                            "DESPC 'Paragraph count, number of paragraphs'",
-                            "DESPL 'Paragraph length, number of sentences in a paragraph, mean'",
-                            "DESPLd 'Paragraph length, number of sentences in a pragraph, standard deviation'"]
+cohmetrixcfg.excludecols = []
+cohmetrixcfg.cols = ["RDFRE 'Flesch Reading Ease'", #easability
+                     "PCREFz 'Text Easability PC Referential cohesion, z score'", #easability
+                     "DRNEG 'Negation density, incidence'", #syntactic
+                     "SYNNP 'Number of modifiers per noun phrase, mean'", #syntactic
+                     "SYNLE 'Left embeddedness, words before main verb, mean'"]#syntactic
+cohmetrixcfg.syntaxcols = ["DRNEG 'Negation density, incidence'",
+                           "SYNNP 'Number of modifiers per noun phrase, mean'",
+                           "SYNLE 'Left embeddedness, words before main verb, mean'"]
+cohmetrixcfg.easecols = ["RDFRE 'Flesch Reading Ease'",
+                         "PCREFz 'Text Easability PC Referential cohesion, z score'"]
 
-cohmetrixcfg.cols = ["RDFRE 'Flesch Reading Ease'",
-                     "PCREFz 'Text Easability PC Referential cohesion, z score'",
-                     "DESWC 'Word count, number of words'",
-                     #"SMCAUSv 'Causal verb incidence'",
-                     # "SMCAUSr 'Ratio of casual particles to causal verbs'",
-                     "PCCNCz 'Text Easability PC Word concreteness, z score'",
-                     "DRNEG 'Negation density, incidence'",
-                     "SYNNP 'Number of modifiers per noun phrase, mean'",
-                     "SYNLE 'Left embeddedness, words before main verb, mean'"]
-
-
-tickcfg={}
-tickcfg['emos']=cfg.condmapping
-tickcfg['models']={}#

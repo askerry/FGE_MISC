@@ -47,13 +47,11 @@ def nonnancorr(array1, array2):
     return r, p, len(array1)
 
 def tickify(ticklabels):
-    for v in cfg.tickcfg.values():
-        try:
-            nticklabels = [v[el] for el in nticklabels]
-            return nticklabels
-        except:
-            pass
-    return ticklabels
+    try:
+        nticklabels=[cfg.tickcfg['emo'][el] for el in ticklabels]
+    except:
+        nticklabels=[cfg.tickcfg['models'][el] for el in ticklabels]
+    return nticklabels
 
 #############################
 #NDE
@@ -145,7 +143,7 @@ def simplebar(values, width=.9, bars=True, elinewidth=2, markersize=None, fmt=No
     f, ax = plt.subplots(figsize=figsize)
     if bars:
         ax.bar(range(len(values)), values, color=colors, width=width)
-    if yerr:
+    if any(yerr):
         if len(colors) > 1:
             while len(colors) < len(values):
                 colors.extend(colors)
@@ -240,19 +238,30 @@ def visualizeclassification(result, m2bresult, orderedlabels, figsize=[12, 3], c
         r=m2bresult['emowise']
         r,p,tempdf,simtype=r['corr'], r['p'], r['df'], r['simtype']
         axis.set_title('%s=%.3f, p=%.3f' % (simtype,r, p))
+        axis.set_ylim([0,1.1])
+        axis.set_xlim([0,1.1])
         sns.regplot(x='raw accuracy', y='model accuracy', data=tempdf, ax=axis)
+        sns.despine()
         #itemwise
         axis = ax[3]
         r=m2bresult['itemwise']
         r,p,tempdf, simtype=r['corr'], r['p'], r['df'], r['simtype']
         axis.set_title('%s=%.3f, p=%.3f' % (simtype, r, p))
+        axis.set_ylim([0,1.1])
+        axis.set_xlim([0,1.1])
         sns.regplot(x='raw accuracy', y='model accuracy', data=tempdf, ax=axis)
+        sns.despine()
         #compare to confusions from NDE
         axis = ax[4]
         r=m2bresult['confmatcomp']
         r,p,tempdf, simtype=r['corr'], r['p'], r['df'], r['simtype']
         axis.set_title('%s=%.3f, p=%.3f' % (simtype, r, p))
+        axis.set_ylim([0,1.1])
+        axis.set_xlim([0,1.1])
         sns.regplot(x='behavioral confusions (NDE)', y='model confusions', data=tempdf, ax=axis)
+        print min(tempdf['behavioral confusions (NDE)']),max(tempdf['behavioral confusions (NDE)'])
+        print min(tempdf['model confusions']),max(tempdf['model confusions'])
+        sns.despine()
 
 #rsa stuff
 
@@ -303,7 +312,7 @@ def inputdetailhists(inputspaces, modelname):
     for x in ax.flatten():
         x.set_ylim([0,1000])
 
-def inputdetailplots(inputspaces, modelname, item2emomapping, orderedemos):
+def inputdetailplots(inputspaces, modelname, item2emomapping, orderedemos, by='dimension'):
     space=inputspaces[modelname]
     spacemat=np.array(space['itemavgs'])
     data={f:spacemat[:,fn] for fn,f in enumerate(space['features'])}
@@ -312,6 +321,8 @@ def inputdetailplots(inputspaces, modelname, item2emomapping, orderedemos):
     sdf['emo']=np.array(emos)
     edf=sdf.groupby('emo').mean()
     edf=edf.ix[orderedemos,:]
+    if by=='emo':
+        edf=edf.T
     rows=int(np.ceil(float(len(edf.columns))/6))
     height=rows*3
     f,axes=plt.subplots(rows,6, figsize=[18,height], sharex=True, sharey=True)
@@ -341,6 +352,16 @@ def visualizeRDMs(allrsasimspaces, orderedemos, ncols=3, keys=[]):
     plt.show()
     return ax
 
+def correlateRDMs(allrsasimspaces, models):
+    spaces=[]
+    for m in models:
+        spaces.append(np.array(allrsasimspaces[m]['simmat_across']).flatten())
+    spaces=np.array(spaces)
+    spaces=pd.DataFrame(data={model:spaces[modeln] for modeln,model in enumerate(models)})
+    spaces=spaces[models]
+    f,ax=plt.subplots(figsize=[12,12])
+    sns.corrplot(spaces, diag_names=False, sig_stars=False)
+    return spaces.corr()
 
 ###################################
 #main results plots
@@ -496,11 +517,59 @@ def plottcresults(tcobjs, roilist):
 #dimensionality reduction
 #############################
 
-def plotscree(ca, ax=0):
+def plotiterativeresults(ir, thresh=.75):
+    varexplained_full=ir['varexp_full']
+    varexplained_ind=ir['varexp_ind']
+    resultingfeatures=ir['features']
+    f,ax=plt.subplots(1,2, figsize=[14,4])
+    ax[0].plot(range(len(varexplained_full)), varexplained_full)
+    ax[0].set_xlabel('features')
+    ax[0].set_ylabel('total variance explained (cumulative)')
+    ax[0].set_xticks(range(len(resultingfeatures)))
+    ax[0].set_xticklabels(resultingfeatures, rotation=90)
+    ax[1].plot(range(len(varexplained_ind)), varexplained_ind)
+    ax[1].set_xlabel('features')
+    ax[1].set_ylabel('individual feature R-squared')
+    ax[1].set_xticks(range(len(resultingfeatures)))
+    ax[1].set_xticklabels(resultingfeatures, rotation=90)
+    threshindex=[el>thresh for el in varexplained_full].index(1)
+    sns.despine()
+    return resultingfeatures, threshindex, ir['df']
+
+def visualizePCA(full, reduced, item2emomapping):
+    # full pca
+    f,ax=plt.subplots(1,2, figsize=[10,3])
+    plotmatrix(full['inputmatrix'], xlabel='initial dimensions', ylabel='initial observations', ax=ax[0], title='initial input')
+    plotscree(full['varexplained'], ax=ax[1])
+    # reduced PCA
+    f,ax=plt.subplots(1,3, figsize=[14,3])
+    plotmatrix(reduced['obsscores'], xlabel='components', ylabel='observations', ax=ax[0], title='obsscores')
+    plotmatrix(reduced['dimloadings'], xlabel='initial dimensions', ylabel='components', ax=ax[1], title='dim loadings')
+    plotmatrix(reduced['recoveredinput'], xlabel='initial dimensions', ylabel='transformed observations', ax=ax[2], title='recovered input (%s components)' %(len(reduced['dimloadings'])))
+    print "reduced to %s dimensions" % (len(reduced['dimloadings']))
+    print "explaining %.3f%% of variance" % (100 * np.sum(reduced['varexplained']))
+    plotinputincomponentspace(reduced['obsscores'], reduced['stimlabels'], item2emomapping, plotlabels=False)
+    plotdimensionsincomponentspace(reduced['dimloadings'], reduced['dimlabels'], mapping=None, componentindices=[0, 1, 2], title=None)
+
+def plotstimoncomponents(reduced, item2emomapping,orderedemos):
+    ncomp=len(reduced['obsscores'][0])
+    f,ax=plt.subplots(1,ncomp, figsize=[4.5*ncomp, 3])
+    for pcn in range(len(reduced['obsscores'][0])):
+        scores=[el[pcn] for el in reduced['obsscores']]
+        tempdf=pd.DataFrame(data={'val':scores, 'emo':[item2emomapping[item] for item in reduced['stimlabels']]})
+        emogrouped=tempdf.groupby('emo')
+        emomeans=emogrouped.mean().ix[orderedemos,:]['val'].values
+        emostd=emogrouped.std().ix[orderedemos,:]['val'].values
+        counts=emogrouped.count().ix[orderedemos,:]['val'].values
+        emosem=[std/np.sqrt(counts[stdn]) for stdn,std in enumerate(emostd)]
+        plotbar(emomeans, yerr=emosem, xticklabels=orderedemos, ylabel='principle component %s' %(pcn+1),ax=ax[pcn])
+        sns.despine()
+
+def plotscree(varexplained, ax=0):
     if ax == 0:
         f, ax = plt.subplots()
     else:
-        ax.plot(ca.explained_variance_ratio_)
+        ax.plot(varexplained)
         ax.set_title('scree plot')
         ax.set_ylabel('variance explained')
         ax.set_xlabel('eigenvector')
