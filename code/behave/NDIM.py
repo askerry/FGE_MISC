@@ -10,7 +10,8 @@ import sys
 sys.path.append('/mindhive/saxelab/scripts/aesscripts/')
 import pandas as pd
 import numpy as np
-from FGE_MISC.code.config import mcfg
+from FGE_MISC.code.config import mcfg, cfg
+import mypymvpa.utilities.stats as mus
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pickle
@@ -230,10 +231,11 @@ def regress(X,y):
     R2=clf.score(X, y)
     predicted_y=clf.predict(X)
     residual_error=y-predicted_y
-    return R2, residual_error
+    return R2, residual_error, predicted_y
+
 def iterativeregression(avgs, rootdir, plotit=False):
     features=avgs.columns
-    keptfeatures,varexplained_full,varexplained_ind=[],[],[]
+    keptfeatures,varexplained_full,varexplained_ind, iterationpredictions=[],[],[],[]
     initialdata=avgs[features].values
     y=avgs[features].values # y starts as initialdata and subsequently becomes the residuals
     for i in range(len(features)):
@@ -241,7 +243,7 @@ def iterativeregression(avgs, rootdir, plotit=False):
         for f in range(len(features)): #regress each isolated feature against the data
             if f not in keptfeatures: #(if the feature has not already been selected)
                 X = np.array([item[f] for item in initialdata]).reshape(len(y),1)
-                R2, residual_error = regress(X,y)
+                R2, residual_error, predy = regress(X,y)
                 R2s.append(R2)
             else:
                 R2s.append(0)
@@ -249,11 +251,12 @@ def iterativeregression(avgs, rootdir, plotit=False):
         keptfeatures.append(fn)
         #recompute the relevant X vector and get its inidividual varexplained (in the fulldataset)
         keeperX = np.array([item[fn] for item in initialdata]).reshape(len(y),1)
-        R2, residual_error = regress(keeperX,initialdata)
+        R2, residual_error, predy = regress(keeperX,initialdata)
         varexplained_ind.append(R2)
         #generate full X (of all kept features) to get the residuals
         fullX = np.array([item[keptfeatures] for item in initialdata])
-        R2, residual_error = regress(fullX,initialdata)
+        R2, residual_error, predy = regress(fullX,initialdata)
+        iterationpredictions.append(predy)
         y = residual_error # the residuals are now our outcome variable for the subsequent iteration
         varexplained_full.append(R2)
     resultingfeatures=[features[fn] for fn in keptfeatures]
@@ -271,9 +274,10 @@ def iterativeregression(avgs, rootdir, plotit=False):
         ax[1].set_xticks(range(len(resultingfeatures)))
         ax[1].set_xticklabels(resultingfeatures, rotation=90)
         sns.despine()
-    results={'df':avgs, 'features':resultingfeatures, 'varexp_full':varexplained_full, 'varexp_ind':varexplained_ind}
+    results={'df':avgs, 'predictions':iterationpredictions, 'features':resultingfeatures, 'varexp_full':varexplained_full, 'varexp_ind':varexplained_ind}
     quicksave(results, os.path.join(rootdir,'results','ITERATIVERESULTS.pkl'))
     return results
+
 
 def affinitypropcluster(datamatrix, true_labels, axislabels, dim1=0, dim2=1):
     '''takes a dataset and returns and plots set of clusters using affinity propogation (advantage: don't have to speciy K)'''
@@ -541,12 +545,19 @@ def similarity(array1, array2, simtype='pearsonr'):
         corr, p = scipy.stats.pearsonr(array1, array2)
     if simtype == 'spearmanr':
         corr, p = scipy.stats.spearmanr(array1, array2)
+    if simtype == 'kendallstau':
+        corr, p = mus.kendallstau(array1, array2, type='a', symmetrical=False)
     return corr, p
 
-def compareconfmats(mconf, labelorder, comparisons, simtype, dropdiag=False):
+def compareconfmats(mconf, labelorder, comparisons, simtype, dropdiag=False, subset=None):
     '''compare raw behavioral confusion matrix from NDE with with confusion matrix from a model-based classification'''
     bconf = comparisons['cprop']
     bconf = bconf.ix[labelorder, labelorder]
+    if subset:
+        modelconfdf=pd.DataFrame(columns=labelorder, index=labelorder, data=mconf)
+        labelorder=[el for el in labelorder if el in subset]
+        bconf=bconf.ix[subset,subset]
+        mconf=modelconfdf.ix[subset,subset].values
     if dropdiag:
         tc=deepcopy(bconf.values)
         tc[np.diag_indices(len(tc[0]))]=np.nan
@@ -556,13 +567,13 @@ def compareconfmats(mconf, labelorder, comparisons, simtype, dropdiag=False):
         marray=tc.flatten()[~np.isnan(tc.flatten())]
     else:
         barray, marray = bconf.values.flatten(), mconf.flatten()
-    if any([any(bconf.columns != labelorder), any(bconf.index != labelorder)]):
+    if any(bconf.columns != labelorder) or any(bconf.index != labelorder):
         warnings.warn('label values are not aligned')
     corr, p = similarity(marray, barray, simtype=simtype)
     tempdf = pd.DataFrame(data={'behavioral confusions (NDE)': barray, 'model confusions': marray})
     return {'df':tempdf, 'corr':corr, 'p':p, 'simtype':simtype}
 
-def comparemodel2behavior(result, behavior, orderedlabels, simtype='pearsonr'):
+def comparemodel2behavior(result, behavior, orderedlabels, simtype='pearsonr', valencedict=cfg.valencedict):
     confmat, labelaccs = result.confmat, result.labelaccs
     rawvals = [behavior['csummary'].accuracy.ix[emo] for emo in orderedlabels]
     #compare accuracies (emo-wise)
@@ -580,7 +591,14 @@ def comparemodel2behavior(result, behavior, orderedlabels, simtype='pearsonr'):
     confmatcomp=compareconfmats(confmat, orderedlabels, behavior, simtype)
     #compare to confusions from NDE without diagonal (i.e. excluding correct answers)
     confmatcomp_nodiag=compareconfmats(confmat, orderedlabels, behavior, simtype, dropdiag=True)
-    return {'emowise':emowise, 'itemwise':itemwise, 'confmatcomp':confmatcomp, 'confmatcomp_nodiag': confmatcomp_nodiag}
+    if valencedict:
+        subsets, subsets_nodiag={'simtype':simtype},{'simtype':simtype}
+        for key in valencedict.keys():
+            subsets[key]=compareconfmats(confmat, orderedlabels, behavior, simtype, subset=valencedict[key])
+            subsets_nodiag[key]=compareconfmats(confmat, orderedlabels, behavior, simtype, subset=valencedict[key],dropdiag=True)
+    else:
+        subsets,subsets_nodiag=None,None
+    return {'emowise':emowise, 'itemwise':itemwise, 'confmatcomp':confmatcomp, 'confmatcomp_nodiag': confmatcomp_nodiag, 'confmatcomp_subsets':subsets,'confmatcomp_nodiag_subsets':subsets_nodiag}
 
 
 

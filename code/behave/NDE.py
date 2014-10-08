@@ -17,6 +17,7 @@ import FGE_MISC.code.vizfuncs as viz
 # basic prep functions
 def setup(ndefile, checks, deletecols):
     ndedf = pd.read_csv(ndefile)
+    #ndedf = ndedf.ix[0:0,:] #drop first two rows since they were from earlier version where subjects did more than 20
     ages=ndedf.age.dropna().values
     genders=[g.lower() for g in ndedf.gender.dropna().values]
     print "%s subjects, %s females" %(len(ages),len([g for g in genders if g[0]=='f']))
@@ -75,7 +76,7 @@ def summarize(items, emos, rawconfusions, propconfusions):
     summary = pd.DataFrame(index=range(len(items)))
     summary['item'] = items
     summary['answer'] = emos
-    summary['count'] = rawconfusions.sum(axis=1)
+    summary['count'] = rawconfusions.sum(axis=1).values
     summary['accuracy'] = [propconfusions.loc[row['item'], row['answer']] for index, row in summary.iterrows()]
     print "overall accuracy: %.3f%%" % (summary['accuracy'].mean())
     summary=summary[summary.answer!='Neutral']
@@ -153,7 +154,7 @@ def main(ndefile, cfg):
         viz.plotaccuracy(NDE_output)
         viz.plotcollapsedresults(NDE_output, orderedemos)
     print "NDE analysis complete."
-    return NDE_output, orderedemos
+    return NDE_output, orderedemos, ndedf
 
 
 if __name__ == '__main__':

@@ -168,6 +168,13 @@ def sentimentbow(df, item2emomapping, trainset=[], stemmer=PorterStemmer()):
     ndimf.quicksave(ndf, os.path.join(rootdir,'data/stimdfs','sentbowdf.pkl'))
     return ndf
 
+def computebestfeatspace(avgs, results, item2emomapping, numdims=10):
+    matrix=results['df'][results['features'][:numdims]].values
+    labels=results['df'].index
+    ndf = makedataframe(matrix, labels, item2emomapping)
+    ndimf.quicksave(ndf, os.path.join(rootdir,'data/stimdfs','best%sfeaturesdf.pkl' %(10)))
+    return ndf
+
 def computeindfeatspace(avgs, item2emomapping):
     ndfs={}
     for feature in avgs.columns:

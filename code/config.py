@@ -135,18 +135,21 @@ vizcfg.basecolor = '#4c72b0'
 vizcfg.cmap = 'Greys'
 
 colordict = {'benchmark': '#3344AA', 'dimmodels': '#5577CC', 'control': '#228855', 'textsentiment': '#00FF44',
-             'other': '#BBCCCC', 'dimreduction': '#CC7788', 'appraisalfeature':'#BBCC88'}
+             'other': '#BBCCCC', 'dimreduction': '#CC7788', 'appraisalfeature':'#AACC88'}
 vizcfg.colordict = {item[0]: hex_to_rgb(item[1]) for item in colordict.items()}
+excludemodels = ['1stPC','2ndPC','3rdPC', 'explicits', 'cohmetrix', 'bagofwordsdf', 'sentimentRNTN', 'sentimentBoW', 'best10features']
 models = odict(
-    [('behaviorialconfs', 'benchmark'), ('explicits', 'benchmark'), ('37appraisals', 'dimmodels'), ('basicemo', 'dimmodels'),
+    [('behaviorialconfs', 'benchmark'), ('best10features', 'appraisalfeature'), ('explicits', 'benchmark'), ('37appraisals', 'dimmodels'), ('basicemo', 'dimmodels'),
      ('valencearousal', 'dimmodels'), ('valence', 'dimmodels'), ('arousal', 'dimmodels'),
      ('sentimentBoW', 'textsentiment'), ('sentimentRNTN', 'textsentiment'), ('cohmetrix', 'control'),
      ('syntax', 'control'), ('readingease', 'control'), ('tfidf', 'control'), ('bagofwordsdf', 'control'),
      ('intensity', 'control'), ('1stPC', 'dimreduction'), ('2ndPC', 'dimreduction'), ('3rdPC', 'dimreduction')])
+bestdimsfromiterative=['pleasantnessfeat', 'relationshipinfluencefeat', 'selfcausefeat', 'relevancefeat', 'bodilydiseasefeat', 'agentcausefeat', 'repetitionfeat', 'occurredfeat', 'peoplefeat', 'pastfeat']
 for f in ['dangerfeat','occurredfeat','expectednessfeat','peoplefeat','closeothersfeat','relationshipinfluencefeat','knowledgechangefeat','pressurefeat','selfinvolvementfeat','moralfeat','agentintentionfeat','suddennessfeat','futurefeat','othersknowledgefeat','controlfeat','agentsituationfeat','safetyfeat','selfcausefeat','certaintyfeat','relevancefeat','consequencesfeat','selfesteemfeat','pastfeat','rememberfeat','familiarityfeat','pleasantnessfeat','selfconsistencyfeat','fairnessfeat','goalconsistencyfeat','mentalstatesfeat','agentcausefeat','attentionfeat','alteringfeat','repetitionfeat','copingfeat','freedomfeat','bodilydiseasefeat','psychologicalchangefeat']:
     models[f]='appraisalfeature'
-dimmodels=['37appraisals', 'basicemo', 'valencearousal', 'valence', 'arousal']
-excludemodels = ['behaviorialconfs', 'explicits', 'cohmetrix', 'bagofwordsdf']
+    if f not in []:#bestdimsfromiterative:
+        excludemodels.append(f)
+dimmodels=['37appraisals', 'basicemo', 'valencearousal', 'valence', 'arousal', 'behaviorialconfs']
 flags = ['rdm', 'confs_item', 'confs_None']
 vizcfg.allmodels = odict()
 vizcfg.excludemodels,vizcfg.dimmodels = [],[]
@@ -160,14 +163,13 @@ for flag in flags:
 
 vizcfg.vizflag = 'rdm'
 vizcfg.modelkeys = [m for m in vizcfg.allmodels.keys() if m not in vizcfg.excludemodels and vizcfg.vizflag in m]
-vizcfg.PCAkeys = [m for m in vizcfg.allmodels.keys() if 'PC' in m and vizcfg.vizflag in m]
 vizcfg.featkeys = [m for m in vizcfg.allmodels.keys() if 'feat' in m and vizcfg.vizflag in m]
-
+vizcfg.bestfeats = ['best10features_rdm']+[m for m in vizcfg.allmodels.keys() if any(el in m for el in bestdimsfromiterative) and vizcfg.vizflag in m]
 vizcfg.modelcolors = {key: vizcfg.colordict[vizcfg.allmodels[key]] for key in vizcfg.allmodels.keys()}
-offsets = [0.85, 0.6, 0.75, 0.5, 0.8, 0.7, 0.9, 0.95, 0.55, 0.65, 0.6, 0.5, 0.75, 0.85, 0.8, 0.7, 0.9, 0.95, 0.55, 0.65, 0.6, 0.5, 0.75, 0.85, 0.8, 0.7, 0.9, 0.95, 0.55, 0.65, 0.6, 0.5, 0.75, 0.85, 0.8, 0.7,0.9, 0.95, 0.55,0.65]
+offsets = [0.85, 0.6, 0.75, 0.5, 0.8, 0.7, 0.9, 0.95, 0.55, 0.65, 0.6, 0.5, 0.75, 0.85, 0.8, 0.7, 0.9, 0.95, 0.55, 0.65, 0.6, 0.5, 0.75, 0.85, 0.8, 0.7, 0.9, 0.95, 0.55, 0.65, 0.6, 0.5, 0.75, 0.85, 0.8, 0.7,0.9, 0.95, 0.55,0.65,0.8, 0.7, 0.9, 0.95, 0.55, 0.65, 0.6, 0.5, 0.75, 0.85, 0.8, 0.7, 0.9, 0.95, 0.55, 0.65, 0.6, 0.5, 0.75, 0.85, 0.8, 0.7, 0.9, 0.95, 0.55, 0.65, 0.6, 0.5, 0.75, 0.85, 0.8, 0.7,0.9, 0.95, 0.55,0.65]
 for key in vizcfg.modelkeys:
     vizcfg.modelcolors[key] = offset(vizcfg.colordict[vizcfg.allmodels[key]], offsets.pop())
-
+#manual for dimmodels
 tickcfg = {}
 tickcfg['emos'] = cfg.condmapping
 tickcfg['models'] = {}

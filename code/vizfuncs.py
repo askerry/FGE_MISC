@@ -16,7 +16,7 @@ import seaborn as sns
 import math
 import warnings
 import FGE_MISC.code.config as cfg
-import plotly.plotly
+import plotly.plotly as plotly
 import os
 
 # #general
@@ -80,7 +80,7 @@ def plotcollapsedresults(NDE_output, orderedemos):
     ax[2].clear()
     NDE_output['csummary']['accuracy'].plot(kind='bar', yerr=NDE_output['csummary']['SEM'], ax=ax[2])
     ax[2].set_ylabel('accuracy(+/- SEM across items)')
-
+    #plotly.plot_mpl(f, filename='NDE', auto_open=False, world_readable=True)
 
 def heatmapdf(df, xlabel=None, ylabel=None, title=None, xticklabels=None, yticklabels=None, ax=None, cmap=cfg.vizcfg.cmap):
     if ax:
@@ -259,8 +259,6 @@ def visualizeclassification(result, m2bresult, orderedlabels, figsize=[12, 3], c
         axis.set_ylim([0,1.1])
         axis.set_xlim([0,1.1])
         sns.regplot(x='behavioral confusions (NDE)', y='model confusions', data=tempdf, ax=axis)
-        print min(tempdf['behavioral confusions (NDE)']),max(tempdf['behavioral confusions (NDE)'])
-        print min(tempdf['model confusions']),max(tempdf['model confusions'])
         sns.despine()
 
 #rsa stuff
@@ -311,6 +309,30 @@ def inputdetailhists(inputspaces, modelname):
     ax=sdf.hist(figsize=[fsize,fsize])
     for x in ax.flatten():
         x.set_ylim([0,1000])
+
+def plotsingleemotion(space, emo, item2emomapping):
+    spacemat=np.array(space['itemavgs'])
+    data={f:spacemat[:,fn] for fn,f in enumerate(space['features'])}
+    sdf=pd.DataFrame(data=data)
+    sdf['item']=index=space['itemlabels']
+    sdf=sdf.groupby('item').mean()
+    sdf=sdf[space['features']]
+    emos=[item2emomapping[item] for item in sdf.index]
+    sdf['emo']=np.array(emos)
+    sdf=sdf[sdf['emo']==emo]
+    del sdf['emo']
+    print len(sdf)
+    means=np.mean(sdf, axis=0)
+    sem=np.std(sdf, ddof=1, axis=0)/np.sqrt(len(sdf))
+    f,ax=plt.subplots(figsize=[8,2.5])
+    ax.bar(range(len(means)),means, yerr=sem)
+    ax.set_xticks(np.arange(len(sdf.columns))+.5)
+    ax.set_xticklabels(sdf.columns.values, rotation=90)
+    ax.set_xlim([0,len(sdf.columns)])
+    ax.set_ylim([0,10])
+    ax.set_title(emo)
+    sns.despine()
+    return sdf
 
 def inputdetailplots(inputspaces, modelname, item2emomapping, orderedemos, by='dimension'):
     space=inputspaces[modelname]
@@ -367,7 +389,7 @@ def correlateRDMs(allrsasimspaces, models):
 #main results plots
 ###################################
 
-def plotacccomparison(resultsdict, keys=[], flags=[], benchmark=None, chance=None, modelcolors=[]):
+def plotacccomparison(resultsdict, keys=[], flags=[], benchsummary=None, subset=None, subsetdict=cfg.cfg.valencedict, chance=None, modelcolors=[], semacross=None, figsize=[12,3]):
     '''plot meanacc for each model space'''
     if len(keys) == 0:
         allkeys = [k[0:k.index('_')] for k in resultsdict.keys()]
@@ -379,8 +401,11 @@ def plotacccomparison(resultsdict, keys=[], flags=[], benchmark=None, chance=Non
             keys.append(k)
     if len(flags) == 0:
         flags = list(set([k[0:k.index('_')] for k in resultsdict.keys()]))
-    f, ax = plt.subplots(1, len(flags), sharey=True)
-    f.suptitle('model comparisons')
+    f, ax = plt.subplots(1, len(flags), sharey=True, figsize=figsize)
+    if subset:
+        f.suptitle('model comparisons (%s)' %subset)
+    else:
+        f.suptitle('model comparisons')
     ax[0].set_ylabel('accuracy (mean % across iterations)')
     for fn, f in enumerate(flags):
         if f:
@@ -388,12 +413,24 @@ def plotacccomparison(resultsdict, keys=[], flags=[], benchmark=None, chance=Non
         else:
             xlabel = "no generalization"
         #keys = [k for k in keys if 'cosine' not in k]
-        accs = [resultsdict[k + '_result_' + f].meanacc for k in keys]
+        if subset:
+            accs=[np.mean([a for an,a in enumerate(resultsdict[k + '_result_' + f].labelaccs) if resultsdict[k + '_result_' + f].orderedlabels[an] in subsetdict[subset]]) for k in keys]
+            benchmark=np.mean(benchsummary.ix[subsetdict[subset],:]['accuracy'].values)
+        else:
+            accs = [resultsdict[k + '_result_' + f].meanacc for k in keys]
+            benchmark=np.mean(benchsummary['accuracy'].values)
+        if semacross =='items':
+            sem = [np.std(resultsdict[k + '_result_' + f].exemplaraccs.mean_acc.values)/np.sqrt(len(resultsdict[k + '_result_' + f].exemplaraccs)) for k in keys]
+        elif semacross == 'emos':
+            sem = [np.std(resultsdict[k + '_result_' + f].labelaccs)/np.sqrt(len(resultsdict[k + '_result_' + f].labelaccs)) for k in keys]
+        else:
+            sem=[0 for k in keys]
+        print accs
         if modelcolors:
             colors = [modelcolors[k + '_confs_' + f] for k in keys]
         axis = ax[fn]
         if modelcolors:
-            axis.bar(range(len(accs)), accs, color=colors)
+            axis.bar(range(len(accs)), accs, color=colors, yerr=sem)
         else:
             axis.bar(range(len(accs)), accs)
         axis.set_xticks(np.arange(len(keys)) + .5)
@@ -403,10 +440,11 @@ def plotacccomparison(resultsdict, keys=[], flags=[], benchmark=None, chance=Non
             axis.plot(axis.get_xlim(), [benchmark, benchmark], linestyle='--', alpha=.4)
         if chance:
             axis.plot(axis.get_xlim(), [chance, chance], linestyle='--', alpha=.4, color='#CC5500')
+        plt.ylim(0,1)
         sns.despine(ax=axis, top=True, right=True, left=False, bottom=False, trim=False)
 
 
-def plotcorrelationcomparison(resultsdict, orderedlabels, keys=[], flags=[], figsize=[12, 3], modelcolors=[], errorbars=False):
+def plotcorrelationcomparison(resultsdict, orderedlabels, comps=None, subset=None, keys=[], ylim=None, flags=[], figsize=[12, 3], modelcolors=[], errorbars=False):
     '''plot item-wise correlation for each model'''
     if len(keys) == 0:
         allkeys = [k[0:k.index('_')] for k in resultsdict.keys()]
@@ -418,10 +456,15 @@ def plotcorrelationcomparison(resultsdict, orderedlabels, keys=[], flags=[], fig
             keys.append(k)
     if len(flags) == 0:
         flags = list(set([k[0:k.index('_')] for k in resultsdict.keys()]))
-    comptypes=resultsdict.values()[0].keys()
+    if subset:
+        comptypes=resultsdict.values()[0].keys()
+    else:
+        comptypes=[c for c in resultsdict.values()[0].keys() if 'subset' not in c]
+    if comps:
+        comptypes=comps
     for comp in comptypes:
         simtype=resultsdict.values()[0][comp]['simtype']
-        f, ax = plt.subplots(1, len(flags), sharey=True)
+        f, ax = plt.subplots(1, len(flags), sharey=True, figsize=figsize)
         f.suptitle('model comparisons: %s correlations' %comp)
         ax[0].set_ylabel('%s correlation (%s) \n (on mean model result across iterations)' %(comp, simtype))
         for fn, f in enumerate(flags):
@@ -435,6 +478,8 @@ def plotcorrelationcomparison(resultsdict, orderedlabels, keys=[], flags=[], fig
             resultsrs, resultsps, resultsns, resultslerrs, resultsuerrs = [], [], [], [], []
             for result in results:
                 result=result[comp]
+                if 'subset' in comp:
+                    result=result[subset]
                 r, p,n = result['corr'], result['p'], len(result['df'])
                 import math
                 stderr = 1.0 / math.sqrt(n - 3) #standard error of the fisher transformed distribution
@@ -453,20 +498,24 @@ def plotcorrelationcomparison(resultsdict, orderedlabels, keys=[], flags=[], fig
             axis.set_xticks(np.arange(len(keys)) + .5)
             axis.set_xticklabels(keys, rotation=90)
             axis.set_xlabel(xlabel)
+            axis.set_ylabel(simtype)
+            if ylim:
+                plt.ylim(ylim)
             sns.despine(ax=axis, top=True, right=True, left=False, bottom=False, trim=False)
 
-def plotindcomparisons(indresults, keys=None):
+def plotindcomparisons(indresults, keys=None, colors='#CC5500'):
     if keys:
         keys=[k[:k.index('_')] for k in keys if k[:k.index('_')] in indresults.keys()]
     else:
         keys=indresults.keys()
     plotvals=[indresults[key]['useremoacc'] for key in keys]
-    ax=plotbar(plotvals, ylim=[0,.15], xticklabels=keys, ylabel="proportion of subject-aligned \n model predictions", title='explicit fails', despine=True)
-    ax=plt.plot(ax.get_xlim(), [.05,.05], color='#CC5500', alpha=.5, linestyle='--')
+    ax=plotbar(plotvals, ylim=[0,.15], colors=colors, xticklabels=keys, ylabel="proportion of subject-aligned \n model predictions", title='explicit fails', despine=True, figsize=[4,6])
+    ax=plt.plot(ax.get_xlim(), [.05,.05], color='#CC5500', linestyle='--')
 
 def plotgroupneuralmodelcorrs(modelcorrs, sems, robj, models, colors, ylim):
+    figsize=[len(modelcorrs)*.4,4]
     ax = simplebar(modelcorrs, yerr=sems, title='%s-- %s of group data' % (robj.roi, robj.corrtype), xlabel='models',
-                   xticklabels=models, ylabel='%s\nSEM from bootstrap test' % (robj.corrtype), colors=colors, ylim=ylim,
+                   xticklabels=models, ylabel='%s\nSEM from bootstrap test' % (robj.corrtype), figsize=figsize, colors=colors, ylim=ylim,
                    show=False)
     sns.despine(ax=ax, top=True, right=True, left=False, bottom=False, trim=False)
     plt.show()
@@ -478,8 +527,9 @@ def plotindneuralmodelocrrs(modelcorrs, sems, robj, errtype, models, colors, yli
         eblabel = '+/- 1 SEM (within subjects)'
     else:
         eblabel = '+/- 1 SEM (between subjects)'
+    figsize=[len(modelcorrs)*.4,4]
     ax = simplebar(modelcorrs, yerr=sems, title='%s-- avg %s of ind data' % (robj.roi, robj.corrtype), xlabel='models',
-                   xticklabels=models, ylabel='%s\n%s' % (robj.corrtype, eblabel), colors=colors, ylim=ylim, show=False)
+                   xticklabels=models, ylabel='%s\n%s' % (robj.corrtype, eblabel), colors=colors, figsize=figsize, ylim=ylim, show=False)
     if noiseceiling:
         ax.axhspan(noiseceiling[0] - .01, noiseceiling[1], facecolor='#8888AA', alpha=0.15)
     if benchmark:
@@ -489,7 +539,7 @@ def plotindneuralmodelocrrs(modelcorrs, sems, robj, errtype, models, colors, yli
     return ax
 
 
-def plottcresults(tcobjs, roilist):
+def plottcresults(tcobjs, roilist, models2show=cfg.vizcfg.modelkeys):
     import seaborn as sns
 
     for roi in tcobjs.keys():
@@ -502,7 +552,7 @@ def plottcresults(tcobjs, roilist):
                 if key in allmodelcolors.keys():
                     tcobj.colordict[key] = allmodelcolors[key]
             f, ax = plt.subplots()
-            for model in cfg.vizcfg.modelkeys:
+            for model in models2show:
                 if model in tcobj.models:
                     tcobj.plottimecourse(model, ax=ax, plotnc=False, ylim=[-.04, .12])
             ax.set_xticks([el for el in range(len(tcobj.steps))])
@@ -521,7 +571,7 @@ def plotiterativeresults(ir, thresh=.75):
     varexplained_full=ir['varexp_full']
     varexplained_ind=ir['varexp_ind']
     resultingfeatures=ir['features']
-    f,ax=plt.subplots(1,2, figsize=[14,4])
+    f,ax=plt.subplots(2,1, figsize=[8,12])
     ax[0].plot(range(len(varexplained_full)), varexplained_full)
     ax[0].set_xlabel('features')
     ax[0].set_ylabel('total variance explained (cumulative)')
@@ -532,7 +582,14 @@ def plotiterativeresults(ir, thresh=.75):
     ax[1].set_ylabel('individual feature R-squared')
     ax[1].set_xticks(range(len(resultingfeatures)))
     ax[1].set_xticklabels(resultingfeatures, rotation=90)
+    sns.despine()
+    plt.tight_layout()
     threshindex=[el>thresh for el in varexplained_full].index(1)
+    fullmodelpreds=ir['predictions'][-1]
+    threshmodelpreds=ir['predictions'][threshindex]
+    f,ax=plt.subplots(1,2, figsize=[14,4])
+    plotmatrix(fullmodelpreds, xlabel='dimensions', ylabel='items', title='full matrix', ax=ax[0])
+    plotmatrix(threshmodelpreds, xlabel='dimensions', ylabel='items', title='predicted matrix from %s dimensions' %(threshindex+1), ax=ax[1])
     sns.despine()
     return resultingfeatures, threshindex, ir['df']
 
