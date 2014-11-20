@@ -12,6 +12,7 @@ import pandas as pd
 import numpy as np
 from FGE_MISC.code.config import mcfg, cfg
 import mypymvpa.utilities.stats as mus
+from mypymvpa.utilities.hardcodedexpparams import FGEcondmapping
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pickle
@@ -21,6 +22,9 @@ import scipy.stats
 import collections
 import FGE_MISC.code.vizfuncs as viz
 from copy import deepcopy
+
+global abb
+abb=FGEcondmapping
 
 # ##########################################################################################
 #misc
@@ -55,7 +59,22 @@ def reversehash(dictobj):
     '''reverses a dict with 1 to 1 mapping'''
     return {item[1]: item[0] for item in dictobj.items()}
 
-
+def makeitemdf(stimdf):
+    idf=stimdf[['emotion', 'num', 'qnum']]
+    def rename(name):
+        return abb[name]
+    def stimname(row):
+        n=row['num']
+        name=row['emo']
+        if n<10:
+            return '%s_00%s' %(name,n)
+        else:
+            return '%s_0%s' %(name,n)
+    idf['emo']=idf['emotion'].apply(rename)
+    stimnames=[stimname(row) for index,row in idf.iterrows()]
+    idf['stimnames']=stimnames
+    idf['qnum']=['q%s'%num for num in idf['qnum'].values]
+    return idf
 ###########################################################################################
 #preprocessing
 ###########################################################################################    
@@ -102,7 +121,7 @@ def setup(dfile, checks, item2emomapping, orderedemos, appraisals, subjcols, fix
 
 
 def normalizedf(df, appraisals):
-    df.loc[:, appraisals] = (df[appraisals] - df[appraisals].mean()) / (df[appraisals].std())  #normalize by row
+    df.loc[:, appraisals] = (df[appraisals] - df[appraisals].mean()) / (df[appraisals].std(ddof=1))  #normalize by row
     return df
 
 
@@ -203,7 +222,7 @@ def summarize(df1, subjdf1, df2, subjdf2):
     ages=[float(el) for el in ages.dropna().values]
     genders=[f.lower() for f in tsubjdf.gender.dropna().values]
     females=len([g for g in genders if g[0]=='f'])
-    print "%s females, age: mean(sem)=%.2f(%.2f)" %(females, np.mean(ages), np.std(ages)/np.sqrt(len(ages)))
+    print "%s females, age: mean(sem)=%.2f(%.2f)" %(females, np.mean(ages), np.std(ages, ddof=1)/np.sqrt(len(ages)))
     counts=countitems(totaldf, visualize=False)
 
 def deletecols(df, dlist):
@@ -218,7 +237,7 @@ def countitems(df, visualize=True):
         plt.figure(figsize=[16, 2])
         counts.plot(kind='bar')
         plt.show()
-    print "%s to %s responses per item (mean=%.3f, sem=%.3f)" % (min(counts.values), max(counts.values), np.mean(counts.values), np.std(counts.values)/np.sqrt(len(counts.values)))
+    print "%s to %s responses per item (mean=%.3f, sem=%.3f)" % (min(counts.values), max(counts.values), np.mean(counts.values), np.std(counts.values, ddof=1)/np.sqrt(len(counts.values)))
     return counts.values
 
 ###########################################################################################    

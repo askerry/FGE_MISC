@@ -21,7 +21,7 @@ def setup(ndefile, checks, deletecols):
     ages=ndedf.age.dropna().values
     genders=[g.lower() for g in ndedf.gender.dropna().values]
     print "%s subjects, %s females" %(len(ages),len([g for g in genders if g[0]=='f']))
-    print "mean age: %.3f, sem: %.3f" %(np.mean(ages), np.std(ages)/np.sqrt(len(ages)))
+    print "mean age: %.3f, sem: %.3f" %(np.mean(ages), np.std(ages, ddof=1)/np.sqrt(len(ages)))
     print "starting with %s rows" % (len(ndedf))
     ndedf = ndedf[ndedf.submission_date.notnull()]
     print "reduced to %s intact rows" % (len(ndedf))
@@ -103,7 +103,7 @@ def compare(summary, orderedemos, vdict):
     t,p=scipy.stats.ttest_ind(negsample, possample)
     df=len(summary.accuracy.values)-2
     print "independent samples ttest comparing classification accuracy across positive and negative emotions"
-    print "Mneg(SEM)=%.2f(%.2f), Mpos(SEM)=%.2f(%.2f), t(%s)=%.2f, p=%.6f" %(np.mean(negsample), np.std(negsample)/np.sqrt(len(negsample)), np.mean(possample), np.std(possample)/np.sqrt(len(possample)), df, t, p)
+    print "Mneg(SEM)=%.2f(%.2f), Mpos(SEM)=%.2f(%.2f), t(%s)=%.2f, p=%.6f" %(np.mean(negsample), np.std(negsample, ddof=1)/np.sqrt(len(negsample)), np.mean(possample), np.std(possample, ddof=1)/np.sqrt(len(possample)), df, t, p)
 
 
 #collapse functions
@@ -126,7 +126,7 @@ def collapsesummary(summary, orderedemos):
         relemos, relitems = zip(*[el for el in tups if el[0] == e])
         tempdf = summary[[item in relitems for item in summary['item']]]
         collapsed.loc[e, :] = tempdf.mean(axis=0)
-        collapsed.loc[e, 'SEM'] = tempdf['accuracy'].std(axis=0) / np.sqrt(len(tempdf['accuracy'].dropna()))
+        collapsed.loc[e, 'SEM'] = tempdf['accuracy'].std(axis=0, ddof=1) / np.sqrt(len(tempdf['accuracy'].dropna()))
     return collapsed
 
 

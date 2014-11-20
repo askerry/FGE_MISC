@@ -137,13 +137,13 @@ vizcfg.cmap = 'Greys'
 colordict = {'benchmark': '#3344AA', 'dimmodels': '#5577CC', 'control': '#228855', 'textsentiment': '#00FF44',
              'other': '#BBCCCC', 'dimreduction': '#CC7788', 'appraisalfeature':'#AACC88'}
 vizcfg.colordict = {item[0]: hex_to_rgb(item[1]) for item in colordict.items()}
-excludemodels = ['1stPC','2ndPC','3rdPC', 'explicits', 'cohmetrix', 'bagofwordsdf', 'sentimentRNTN', 'sentimentBoW', 'best10features']
+excludemodels = ['sentimentRNTN', 'sentimentBoW', 'best10features']
 models = odict(
-    [('behaviorialconfs', 'benchmark'), ('best10features', 'appraisalfeature'), ('explicits', 'benchmark'), ('37appraisals', 'dimmodels'), ('basicemo', 'dimmodels'),
+    [('behaviorialconfs', 'benchmark'), ('best10features', 'appraisalfeature'), ('37appraisals', 'dimmodels'), ('basicemo', 'dimmodels'),
      ('valencearousal', 'dimmodels'), ('valence', 'dimmodels'), ('arousal', 'dimmodels'),
-     ('sentimentBoW', 'textsentiment'), ('sentimentRNTN', 'textsentiment'), ('cohmetrix', 'control'),
-     ('syntax', 'control'), ('readingease', 'control'), ('tfidf', 'control'), ('bagofwordsdf', 'control'),
-     ('intensity', 'control'), ('1stPC', 'dimreduction'), ('2ndPC', 'dimreduction'), ('3rdPC', 'dimreduction')])
+     ('sentimentBoW', 'textsentiment'), ('sentimentRNTN', 'textsentiment'),
+     ('syntax', 'control'), ('readingease', 'control'), ('tfidf', 'control'),
+     ('intensity', 'control')])
 bestdimsfromiterative=['pleasantnessfeat', 'relationshipinfluencefeat', 'selfcausefeat', 'relevancefeat', 'bodilydiseasefeat', 'agentcausefeat', 'repetitionfeat', 'occurredfeat', 'peoplefeat', 'pastfeat']
 for f in ['dangerfeat','occurredfeat','expectednessfeat','peoplefeat','closeothersfeat','relationshipinfluencefeat','knowledgechangefeat','pressurefeat','selfinvolvementfeat','moralfeat','agentintentionfeat','suddennessfeat','futurefeat','othersknowledgefeat','controlfeat','agentsituationfeat','safetyfeat','selfcausefeat','certaintyfeat','relevancefeat','consequencesfeat','selfesteemfeat','pastfeat','rememberfeat','familiarityfeat','pleasantnessfeat','selfconsistencyfeat','fairnessfeat','goalconsistencyfeat','mentalstatesfeat','agentcausefeat','attentionfeat','alteringfeat','repetitionfeat','copingfeat','freedomfeat','bodilydiseasefeat','psychologicalchangefeat']:
     models[f]='appraisalfeature'
