@@ -166,13 +166,20 @@ def checkrange(df, appraisals):
 
 
 def deletecheckfailsubjs(df, checkcol, avgthresh):
+    starting=len(df['subjid'].unique())
     keepers = [subj for subj in df['subjid'].unique() if df[checkcol][df['subjid'] == subj].mean() > avgthresh]
     df = df[[(subj in keepers) for subj in df['subjid'].values]]
+    ending=len(df['subjid'].unique())
+    print "excluding %s subjects" %(starting-ending)
     return df
 
 
 def deletecheckfailitems(df, checkcol, indthresh):
-    return df[df[checkcol] > indthresh]
+    starting=len(df['subjid'].unique())
+    df= df[df[checkcol] > indthresh]
+    ending=len(df['subjid'].unique())
+    print "excluding %s subjects" %(starting-ending)
+    return df
 
 
 def checkweird(df, orderedemos):

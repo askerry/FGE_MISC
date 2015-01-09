@@ -92,6 +92,7 @@ def heatmapdf(df, xlabel=None, ylabel=None, title=None, xticklabels=None, ytickl
         pass
     else:
         f, ax = plt.subplots()
+    cmap='hot'
     ax.pcolor(df, cmap=cmap)
     if xticklabels:
         ax.set_xticks(np.arange(len(df.columns)) + .5)
@@ -237,7 +238,9 @@ def simplebar(values, width=.9, bars=True, elinewidth=2, markersize=None, fmt=No
         sns.despine(fig=f, ax=ax, top=True, right=True, left=False, bottom=False, trim=False)
     if show:
         plt.show()
-    return ax
+    try:
+        return f, ax
+    except: return ax
 
 
 def plotmatrix(matrix, xlabel='', ylabel='', ax=None, title='', clim=[], colorbar=False, figsize=[4, 3], xticklabels=[],
@@ -326,7 +329,7 @@ def plotrsadict(rsadict, item2emomapping, title, collapse='emo', order=[], ax=No
     else:
         plotmatrix(avgs.values, ax=ax)
         ax.set_xticks(np.arange(len(features)) + .5)
-        ax.set_yticks(range(len(avgs.index.values)))
+        ax.set_yticks(np.arange(len(avgs.index.values))+5)
         ax.set_xticklabels(features, rotation=90)
         ax.set_yticklabels(avgs.index.values)
     ax.set_title(title)
@@ -412,7 +415,7 @@ def visualizeRDMs(allrsasimspaces, orderedemos, ncols=3, keys=[]):
     keys_conf_None = [k for k in keys if 'None' in k]
     keys_conf_item = [k for k in keys if 'item' in k]
     keys = keys_raw + keys_conf_None + keys_conf_item
-    f, ax = plt.subplots(int(np.ceil(numspaces / float(ncols))), ncols, figsize=[16, numspaces])
+    f, ax = plt.subplots(int(np.ceil(numspaces / float(ncols))), ncols, figsize=[16, numspaces*4])
     for keyn, key in enumerate(keys):
         axis = ax[keyn / ncols, keyn % ncols]
         rsamat, labels = allrsasimspaces[key]['simmat_across'], allrsasimspaces[key]['labels']
@@ -450,11 +453,11 @@ def plotacccomparison(resultsdict, keys=[], flags=[], benchsummary=None, subset=
             keys.append(k)
     if len(flags) == 0:
         flags = list(set([k[0:k.index('_')] for k in resultsdict.keys()]))
-    f, ax = plt.subplots(1, len(flags), sharey=True, figsize=figsize)
+    fig, ax = plt.subplots(1, len(flags), sharey=True, figsize=figsize)
     if subset:
-        f.suptitle('model comparisons (%s)' % subset)
+        fig.suptitle('model comparisons (%s)' % subset)
     else:
-        f.suptitle('model comparisons')
+        fig.suptitle('model comparisons')
     ax[0].set_ylabel('accuracy (mean % across iterations)')
     dfs = {}
     for fn, f in enumerate(flags):
@@ -472,7 +475,7 @@ def plotacccomparison(resultsdict, keys=[], flags=[], benchsummary=None, subset=
         else:
             accs = [resultsdict[k + '_result_' + f].meanacc for k in keys]
             benchmark = np.mean(benchsummary['accuracy'].values)
-            dfdata = {k: resultsdict[k + '_result_' + f].labelaccs for k in keys}
+            dfdata = {k: resultsdict[k + '_result_' + f].exemplaraccs.mean_acc for k in keys}
             dfs[f] = pd.DataFrame(data=dfdata)
         if semacross == 'items':
             sem = [np.std(resultsdict[k + '_result_' + f].exemplaraccs.mean_acc.values, ddof=1) / np.sqrt(
@@ -499,7 +502,7 @@ def plotacccomparison(resultsdict, keys=[], flags=[], benchsummary=None, subset=
             axis.plot(axis.get_xlim(), [chance, chance], linestyle='--', alpha=.4, color='#CC5500')
         plt.ylim(0, 1)
         sns.despine(ax=axis, top=True, right=True, left=False, bottom=False, trim=False)
-    return dfs
+    return dfs, fig
 
 
 def plotcorrelationcomparison(resultsdict, orderedlabels, comps=None, subset=None, keys=[], ylim=None, flags=[],
@@ -598,8 +601,13 @@ def plotindneuralmodelocrrs(modelcorrs, sems, robj, errtype, models, colors, yli
     else:
         eblabel = '+/- 1 SEM (between subjects)'
     figsize = [len(modelcorrs) * .4, 4]
-    ax = simplebar(modelcorrs, yerr=sems, title='%s-- avg %s of ind data' % (robj.roi, robj.corrtype), xlabel='models',
+    '''
+    f, ax = simplebar(modelcorrs, yerr=sems, title='%s-- avg %s of ind data' % (robj.roi, robj.corrtype), xlabel='models',
                    xticklabels=models, ylabel='%s\n%s' % (robj.corrtype, eblabel), colors=colors, figsize=figsize,
+                   ylim=ylim, show=False)
+    '''
+    f, ax = simplebar(modelcorrs, yerr=sems, title='%s' % (robj.roi), xlabel='models',
+                   xticklabels=models, ylabel='%s' % (robj.corrtype), colors=colors, figsize=figsize,
                    ylim=ylim, show=False)
     if noiseceiling:
         ax.axhspan(noiseceiling[0] - .01, noiseceiling[1], facecolor='#8888AA', alpha=0.15)
@@ -607,6 +615,7 @@ def plotindneuralmodelocrrs(modelcorrs, sems, robj, errtype, models, colors, yli
         ax.plot(ax.get_xlim(), [benchmark, benchmark], linestyle='--', alpha=.4)
     sns.despine(ax=ax, top=True, right=True, left=False, bottom=False, trim=False)
     plt.show()
+    savefigure(f,robj.roi+'indresults'+str(np.random.randint(100)), '/mindhive/saxelab2/FGE/RSA_figs')
     return ax
 
 
@@ -636,6 +645,7 @@ def plottcresults(tcobjs, roilist, models2show=cfg.vizcfg.modelkeys, colordict=c
             ax.set_title('neural-model correlations over time: %s' % (tcobj.roi))
             ax.legend(loc=[1.05, .3])
             sns.despine()
+            savefigure(f, roi+'tcresults'+str(np.random.randint(100)), '/mindhive/saxelab2/FGE/RSA_figs')
 
 #############################
 #dimensionality reduction

@@ -54,7 +54,70 @@ def bagofwords(df, item2emomapping):
 
 
 #smarter tf-idf based text similarity
-def tfidf(df, item2emomapping, visualize=False, computecosine=False):
+def tfidf(df, item2emomapping, visualize=False, computesim=False):
+    print "creating tf-idf feature space"
+    import nltk
+    from nltk.corpus import stopwords
+    import string
+    from nltk.stem.porter import PorterStemmer
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.metrics.pairwise import linear_kernel
+
+    def stem_tokens(tokens, stemmer):
+        stemmed = []
+        for item in tokens:
+            stemmed.append(stemmer.stem(item))
+        return stemmed
+
+    def tokenize(text, stemmer=None):
+        stemmer=PorterStemmer()
+        tokens = nltk.word_tokenize(text)
+        filtered = [w for w in tokens if not w in stopwords.words('english')]
+        if stemmer:
+            stems = stem_tokens(filtered, stemmer)
+        else:
+            stems=filtered
+        return stems
+
+    def singletextsimilarity(tfidf, index, listofstrings, printdeets=False):
+        similarities = linear_kernel(tfidf[index], tfidf).flatten()
+        if printdeets:
+            most_related_docs_indices = similarities.argsort()[:-5:-1]
+            most_related_similarities = similarities[most_related_docs_indices]
+            print "docs most related to doc #%s are %s." % (
+            index, ', '.join([str(el) for el in most_related_docs_indices]))
+            print "there similarities are %s." % (', '.join([str(el) for el in most_related_similarities]))
+        return similarities
+
+    def nandiagmatrix(matrix):
+        nanmatrix = np.array(deepcopy(matrix))
+        nanmatrix[np.diag_indices(len(nanmatrix))] = np.nan
+        return list(nanmatrix)
+
+    def FGEtfidf(df, computesim=False):
+        tfidf = TfidfVectorizer(tokenizer=tokenize, stop_words='english')
+        tfs = tfidf.fit_transform(listofstrings)
+        simmatrix = []
+        if computesim:
+            for ln, l in enumerate(listofstrings):
+                similarities = singletextsimilarity(tfs, ln, listofstrings)
+                simmatrix.append(similarities)
+                simmatrix = nandiagmatrix(simmatrix)
+        return simmatrix, tfs
+
+    listofstrings = list(df['cause'].values)
+    itemlabels = ['q%0.f' % qnum for qnum in df['qnum'].values]
+    simmatrix, tfs = FGEtfidf(listofstrings, computesim)
+    simoutput = {'matrix': simmatrix, 'itemlabels': itemlabels}
+    if visualize and computesim:
+        ndimf.plotmatrix(np.array(simmatrix), xlabel='diag non-independent')
+    dense=np.array([np.array(line.todense()).flatten() for line in tfs])
+    df = makedataframe(dense, itemlabels, item2emomapping)
+    ndimf.quicksave(df, os.path.join(rootdir,'data/stimdfs','tfidfdf.pkl'))
+    return simoutput, df
+
+#smarter tf-idf based text similarity
+def tfidf_old(df, item2emomapping, visualize=False, computecosine=False):
     print "creating tf-idf feature space"
     import nltk
     from nltk.corpus import stopwords
